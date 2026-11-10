@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex">
+  <title>Alcor · Evaluación</title>
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/vendor/codemirror/codemirror.css">
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <!-- Cargando / error -->
+  <div id="screen-msg" class="center">
+    <div class="card">
+      <div class="brand"><span class="logo"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l2.6 7.4L22 12l-7.4 2.6L12 22l-2.6-7.4L2 12l7.4-2.6z"/></svg></span>Alcor</div>
+      <h1 id="msg-title">Cargando…</h1>
+      <p id="msg-text"></p>
+    </div>
+  </div>
+
+  <!-- Bienvenida -->
+  <div id="screen-welcome" class="center hidden">
+    <div class="card" style="max-width:480px">
+      <div class="brand"><span class="logo"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l2.6 7.4L22 12l-7.4 2.6L12 22l-2.6-7.4L2 12l7.4-2.6z"/></svg></span>Alcor</div>
+      <h1>Hola, <span id="w-name"></span> 👋</h1>
+      <p>Tienes una evaluación técnica lista. Lee las indicaciones antes de comenzar.</p>
+      <div class="meta" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:16px">
+        <span class="chip" id="w-challenge"></span><span class="chip" id="w-lang"></span><span class="chip" id="w-min"></span>
+      </div>
+      <ul class="list">
+        <li>El cronómetro empieza cuando presiones “Comenzar” y no se puede pausar.</li>
+        <li>Tu código se ejecuta en tu navegador. Corre los tests las veces que quieras.</li>
+        <li>Tu progreso se guarda automáticamente y el evaluador lo ve en tiempo real.</li>
+        <li>Se registran pegados de texto y cambios de pestaña.</li>
+        <li>Al enviar ya no podrás editar. Si se acaba el tiempo se envía solo.</li>
+      </ul>
+      <button class="btn primary" id="btn-start" style="width:100%;justify-content:center;height:40px">Comenzar evaluación</button>
+      <div class="muted" id="w-warm" style="font-size:12px;margin-top:10px;text-align:center"></div>
+    </div>
+  </div>
+
+  <!-- Workspace -->
+  <div id="screen-app" class="app hidden">
+    <aside class="sidebar">
+      <div class="sidebar-head">
+        <div class="brand"><span class="logo"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l2.6 7.4L22 12l-7.4 2.6L12 22l-2.6-7.4L2 12l7.4-2.6z"/></svg></span>Alcor</div>
+      </div>
+      <div class="sidebar-body problem">
+        <div class="meta"><span class="chip" id="p-diff"></span><span class="chip" id="p-lang"></span></div>
+        <h2 id="p-title"></h2>
+        <p id="p-desc"></p>
+        <div class="section-title">Función a implementar</div>
+        <div class="example" id="p-fn"></div>
+        <div class="section-title">Ejemplos</div>
+        <div id="p-examples"></div>
+      </div>
+    </aside>
+    <main class="main">
+      <div class="topbar">
+        <span class="chip live" id="sync-chip"><span class="dot"></span>En vivo</span>
+        <span class="muted" style="font-size:13px" id="t-name"></span>
+        <div class="spacer"></div>
+        <span class="timer" id="timer">--:--</span>
+        <button class="btn" id="btn-reset" title="Restaurar código inicial">Reiniciar</button>
+        <button class="btn" id="btn-run">▶ Correr tests <span class="kbd" style="border-color:var(--border)">⌘↵</span></button>
+        <button class="btn primary" id="btn-submit">Enviar</button>
+      </div>
+      <div class="editor-wrap"><textarea id="editor"></textarea></div>
+      <div class="results">
+        <div class="tabs">
+          <button class="tab active" data-tab="tests">Tests</button>
+          <button class="tab" data-tab="console">Consola</button>
+          <span class="summary" id="summary"></span>
+        </div>
+        <div class="results-body">
+          <div id="tab-tests"><div class="empty">Presiona “Correr tests” para ejecutar tu solución contra los ejemplos.</div></div>
+          <div id="tab-console" class="hidden"><pre class="console muted">Aquí aparece lo que imprimas con print() / console.log().</pre></div>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <script src="/vendor/codemirror/codemirror.js"></script>
+  <script src="/vendor/codemirror/mode/python.js"></script>
+  <script src="/vendor/codemirror/mode/javascript.js"></script>
+  <script src="/vendor/codemirror/addon/closebrackets.js"></script>
+  <script src="/vendor/codemirror/addon/matchbrackets.js"></script>
+  <script src="/vendor/codemirror/addon/active-line.js"></script>
+  <script src="/runner.js"></script>
+  <script src="/ui.js"></script>
+  <script src="/candidate.js"></script>
+</body>
+</html>

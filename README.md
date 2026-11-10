@@ -1,0 +1,61 @@
+# ✦ Alcor
+
+Evaluaciones técnicas en tiempo real. Escribes el nombre del candidato, Alcor genera un link
+y el candidato resuelve un reto en **Python** o **JavaScript** dentro de un editor en el navegador,
+con **tests automáticos**. Tú ves su código, ejecuciones y actividad **en vivo** desde un panel
+de administrador al que solo tú tienes acceso.
+
+- **Sin base de datos ni dependencias**: un solo `server.js` con Node puro. El estado vive en `data/db.json`.
+- **Ejecución local en el navegador**: JavaScript corre en un Web Worker; Python corre con
+  [Pyodide](https://pyodide.org) (CPython en WebAssembly). Timeout de 6 s contra ciclos infinitos.
+- **Links firmados (HMAC)**: el link contiene nombre, reto, lenguaje y duración firmados; aunque el
+  servidor se reinicie, el link sigue siendo válido.
+- **Tests ocultos**: el candidato solo ve los ejemplos. Los casos ocultos solo llegan al admin, que
+  puede re-ejecutar el código del candidato con todos los casos (los resultados del candidato son
+  informativos y no se pueden falsificar para el admin).
+- **Señales de integridad**: número de pegados (paste), cambios de pestaña, ejecuciones y una línea de tiempo.
+- **Tiempo real** vía Server-Sent Events (sin websockets ni buses de mensajes).
+
+## Flujo
+
+1. Entras a `/admin` con tu `ADMIN_PASSWORD`.
+2. Escribes el nombre, eliges reto, lenguaje y minutos → **Generar link**.
+3. Mandas el link `/c/…` al candidato. El cronómetro arranca cuando presiona *Comenzar*.
+4. Ves su código en vivo, sus corridas de tests y su actividad. Al terminar, corres los tests ocultos.
+5. **Revocar** borra al candidato e invalida su link. **Exportar JSON** descarga todo.
+
+## Correr localmente
+
+```bash
+ADMIN_PASSWORD=mi-clave node server.js
+# abre http://localhost:3000/admin
+```
+
+Variables de entorno:
+
+| Variable | Descripción |
+| --- | --- |
+| `ADMIN_PASSWORD` | **Obligatoria.** Contraseña del panel de admin. Sin ella el panel queda deshabilitado. |
+| `SESSION_SECRET` | Secreto para firmar links y la cookie de admin. Si cambia, los links anteriores dejan de funcionar. |
+| `DATA_DIR` | Carpeta donde se guarda `db.json` (por defecto `./data`). |
+| `PORT` | Puerto HTTP (por defecto 3000). |
+
+## Agregar retos
+
+Edita `challenges.js`. Cada reto define el enunciado, el nombre de la función por lenguaje, el código
+inicial y los casos `{ args, expected, hidden? }`. Las entradas y salidas son JSON.
+
+## Despliegue en Render
+
+El repo incluye `render.yaml` (Blueprint). Servicio web Node, plan free, `startCommand: node server.js`.
+Define `ADMIN_PASSWORD` en *Environment*; `SESSION_SECRET` se genera solo.
+
+> **Nota sobre el plan free**: el disco es efímero y el servicio se duerme tras 15 min sin tráfico.
+> Los links siguen funcionando (son firmados), pero el progreso guardado puede perderse en un reinicio.
+> Revisa/exporta los resultados al terminar cada evaluación, o agrega un *Persistent Disk* en Render
+> y apunta `DATA_DIR` a su ruta de montaje.
+
+Diseño inspirado en playgrounds de código vistos en Mobbin (Browserbase, Replit): sidebar neutro con
+el enunciado, editor central limpio, acción principal con acento y panel inferior de resultados.
+
+Editor: [CodeMirror 5](https://codemirror.net/5/) (MIT) incluido en `public/vendor/`.

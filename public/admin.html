@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex">
+  <title>Alcor · Admin</title>
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/vendor/codemirror/codemirror.css">
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <!-- Login -->
+  <div id="login" class="center hidden">
+    <form class="card stack" id="login-form">
+      <div class="brand"><span class="logo"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l2.6 7.4L22 12l-7.4 2.6L12 22l-2.6-7.4L2 12l7.4-2.6z"/></svg></span>Alcor</div>
+      <div><h1>Panel del evaluador</h1><p>Acceso restringido. Ingresa la contraseña de administrador.</p></div>
+      <div><label for="pw">Contraseña</label><input id="pw" type="password" autocomplete="current-password" required autofocus></div>
+      <div class="error-text" id="login-err"></div>
+      <button class="btn primary" style="width:100%;justify-content:center;height:40px">Entrar</button>
+    </form>
+  </div>
+
+  <!-- Dashboard -->
+  <div id="dash" class="hidden">
+    <div class="topbar">
+      <div class="brand"><span class="logo"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l2.6 7.4L22 12l-7.4 2.6L12 22l-2.6-7.4L2 12l7.4-2.6z"/></svg></span>Alcor</div>
+      <span class="chip" id="stream-chip"><span class="dot"></span>Conectando…</span>
+      <div class="spacer"></div>
+      <a class="btn ghost" href="/api/admin/export">Exportar JSON</a>
+      <button class="btn" id="btn-logout">Salir</button>
+    </div>
+    <div class="admin-grid">
+      <aside>
+        <form class="form stack" id="new-form">
+          <div class="section-title" style="margin:0">Nuevo candidato</div>
+          <div><label for="f-name">Nombre</label><input id="f-name" placeholder="Ej. Ana López" required maxlength="80"></div>
+          <div><label for="f-ch">Reto</label><select id="f-ch"></select></div>
+          <div class="row">
+            <div><label for="f-lang">Lenguaje</label><select id="f-lang"><option value="python">Python</option><option value="javascript">JavaScript</option></select></div>
+            <div><label for="f-min">Minutos</label><input id="f-min" type="number" min="5" max="240" value="20"></div>
+          </div>
+          <button class="btn primary" style="width:100%;justify-content:center">Generar link</button>
+          <div id="new-link" class="hidden">
+            <div class="linkbox"><input id="new-url" readonly><button type="button" class="btn" id="btn-copy-new">Copiar</button></div>
+          </div>
+        </form>
+        <div class="section-title" style="margin:16px 16px 4px">Candidatos</div>
+        <div id="cand-list"></div>
+      </aside>
+      <section id="detail">
+        <div class="empty" style="padding:40px">Crea un candidato o selecciona uno para ver su progreso en tiempo real.</div>
+      </section>
+    </div>
+  </div>
+
+  <script src="/vendor/codemirror/codemirror.js"></script>
+  <script src="/vendor/codemirror/mode/python.js"></script>
+  <script src="/vendor/codemirror/mode/javascript.js"></script>
+  <script src="/runner.js"></script>
+  <script src="/ui.js"></script>
+  <script src="/admin.js"></script>
+</body>
+</html>
