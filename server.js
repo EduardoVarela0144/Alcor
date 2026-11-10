@@ -20,6 +20,13 @@ const ADMIN_TTL_MS = 12 * 60 * 60 * 1000;
 const LANGS = ['python', 'javascript'];
 const MAX_EXERCISES = 6;
 const MAX_CODE = 100000;
+const MAX_VERSIONS = 30;
+const THEMES = ['system', 'light', 'dark'];
+// Correo opcional vía Resend (https://resend.com). Sin estas variables, el admin usa su propio cliente de correo (mailto).
+const RESEND_API_KEY = process.env.RESEND_API_KEY || '';
+const MAIL_FROM = process.env.MAIL_FROM || 'Alcor <onboarding@resend.dev>';
+const validTz = (tz) => { try { return !!tz && typeof tz === 'string' && tz.length < 64 && !!new Intl.DateTimeFormat('en-US', { timeZone: tz }); } catch { return false; } };
+const validEmail = (e) => typeof e === 'string' && e.length < 200 && /^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/.test(e);
 
 if (!ADMIN_PASSWORD) console.warn('[alcor] ADMIN_PASSWORD no está definido: el panel de admin queda deshabilitado.');
 
@@ -118,6 +125,7 @@ function getCandidate(token) {
       createdAt: p.iat, token, status: 'pending', startedAt: null, submittedAt: null,
       code: {}, lastSeen: null, typingAt: null, results: {}, runs: 0, pastes: 0, blurs: 0, timeline: [],
       locked: !!p.locked, opensAt: Number(p.opensAt) || null, activatedAt: null,
+      tz: validTz(p.tz) ? p.tz : 'UTC', theme: THEMES.includes(p.theme) ? p.theme : 'system', email: null, versions: {},
       rebuilt: true, // creado desde el token: puede recuperarse con el respaldo del navegador
     };
     save();
@@ -126,7 +134,60 @@ function getCandidate(token) {
 }
 // Un link preparado queda bloqueado hasta que el admin lo activa o llega su hora programada.
 const isOpen = (c) => !c.locked || !!c.activatedAt || (!!c.opensAt && Date.now() >= c.opensAt);
-const summary = (c) => ({ ...c, timeline: undefined, code: undefined, events: c.timeline.length, open: isOpen(c) });
+const summary = (c) => ({ ...c, timeline: undefined, code: undefined, versions: undefined, events: c.timeline.length, open: isOpen(c),
+  versionCount: Object.values(c.versions || {}).reduce((n, v) => n + v.length, 0) });
+
+// Versiones (copias que guarda el candidato): { idEjercicio: [{ id, t, label, code, auto }] }
+function addVersion(cand, ex, v) {
+  if (!cand.challengeIds.includes(ex) || typeof v.code !== 'string') return;
+  cand.versions = cand.versions || {};
+  const list = cand.versions[ex] = cand.versions[ex] || [];
+  const id = String(v.id || crypto.randomBytes(5).toString('hex')).slice(0, 24);
+  if (list.some((x) => x.id === id)) return;
+  list.push({ id, t: Number(v.t) || Date.now(), label: String(v.label || '').slice(0, 80), code: v.code.slice(0, MAX_CODE), auto: !!v.auto });
+  list.sort((a, b) => a.t - b.t);
+  while (list.length > MAX_VERSIONS) {
+    const i = list.findIndex((x) => x.auto); // primero se descartan las automáticas más viejas
+    list.splice(i >= 0 ? i : 0, 1);
+  }
+}
+function mergeVersions(cand, versions) {
+  if (!versions || typeof versions !== 'object') return;
+  for (const ex of Object.keys(versions)) for (const v of Array.isArray(versions[ex]) ? versions[ex].slice(-MAX_VERSIONS) : []) addVersion(cand, ex, v || {});
+}
+
+// ---------- correo ----------
+function fmtDate(t, tz) {
+  return new Intl.DateTimeFormat('es-MX', { timeZone: tz, weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit', timeZoneName: 'short' }).format(t);
+}
+function emailFor(cand, link) {
+  const ex = cand.challengeIds.length === 1 ? `el ejercicio "${challengeById(cand.challengeIds[0]).title}"` : `${cand.challengeIds.length} ejercicios`;
+  const lang = cand.lang === 'python' ? 'Python' : 'JavaScript';
+  const when = cand.opensAt && !cand.activatedAt
+    ? `La evaluación se abrirá el ${fmtDate(cand.opensAt, cand.tz)} (equivale a ${fmtDate(cand.opensAt, 'UTC')}). Al abrir el link verás la hora convertida a tu zona horaria.`
+    : isOpen(cand) ? 'Ya puedes entrar cuando quieras.' : 'Te avisaremos cuando la evaluación esté activa; si abres el link antes verás una pantalla de espera.';
+  const subject = `Tu evaluación técnica${cand.opensAt ? ' · ' + new Intl.DateTimeFormat('es-MX', { timeZone: cand.tz, day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }).format(cand.opensAt) : ''}`;
+  const text = [
+    `Hola ${cand.name},`, '',
+    `Te compartimos el link de acceso a tu evaluación técnica: ${ex} en ${lang}, con una duración de ${cand.minutes} minutos.`, '',
+    when, '', link, '',
+    'Indicaciones:',
+    '• El cronómetro empieza cuando presiones "Comenzar" y no se puede pausar.',
+    '• Tu código se guarda automáticamente; puedes guardar versiones y regresar a ellas.',
+    '• Usa una computadora con Chrome, Edge, Firefox o Safari actualizados.', '',
+    '¡Mucho éxito!',
+  ].join('\n');
+  const esc = (x) => String(x).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  const html = `<div style="font-family:-apple-system,Segoe UI,Helvetica,Arial,sans-serif;color:#171717;max-width:520px;margin:0 auto;padding:24px;line-height:1.55;font-size:15px">
+<p style="font-weight:600;font-size:16px;margin:0 0 20px">✦ Alcor</p>
+<p>Hola ${esc(cand.name)},</p>
+<p>Te compartimos el link de acceso a tu evaluación técnica: ${esc(ex)} en ${lang}, con una duración de ${cand.minutes} minutos.</p>
+<p>${esc(when)}</p>
+<p style="margin:24px 0"><a href="${esc(link)}" style="background:#171717;color:#fff;text-decoration:none;padding:10px 18px;border-radius:8px;display:inline-block;font-weight:500">Abrir evaluación</a></p>
+<p style="color:#6b6b6b;font-size:13px">El cronómetro empieza cuando presiones "Comenzar". Tu código se guarda automáticamente.<br>Si el botón no funciona, copia este link: ${esc(link)}</p>
+</div>`;
+  return { subject, text, html };
+}
 
 // ---------- tiempo real (Server-Sent Events para el admin) ----------
 const streams = new Set();
@@ -192,7 +253,7 @@ async function handle(req, res) {
   if (p.startsWith('/api/admin/')) {
     if (!isAdmin(req)) return send(res, 401, { error: 'No autorizado' });
 
-    if (p === '/api/admin/me' && m === 'GET') return send(res, 200, { ok: true });
+    if (p === '/api/admin/me' && m === 'GET') return send(res, 200, { ok: true, email: !!RESEND_API_KEY });
 
     if (p === '/api/admin/challenges' && m === 'GET') return send(res, 200, CHALLENGES);
 
@@ -213,9 +274,13 @@ async function handle(req, res) {
       if (activation === 'scheduled' && !(opensAt > Date.now())) return send(res, 400, { error: 'La fecha de activación debe ser en el futuro.' });
       const payload = { id: crypto.randomBytes(9).toString('base64url'), name, lang, challenges: ids, minutes, iat: Date.now() };
       if (activation !== 'now') { payload.locked = true; if (opensAt) payload.opensAt = opensAt; }
+      if (validTz(body.tz)) payload.tz = body.tz;
+      if (THEMES.includes(body.theme) && body.theme !== 'system') payload.theme = body.theme;
+      if (body.email && !validEmail(body.email)) return send(res, 400, { error: 'El correo no es válido.' });
       const token = makeToken(payload);
       const cand = getCandidate(token);
       cand.rebuilt = false;
+      if (body.email) cand.email = body.email;
       broadcast(cand);
       return send(res, 201, { ...summary(cand), token });
     }
@@ -248,7 +313,10 @@ async function handle(req, res) {
           runs: +rec.runs || 0, pastes: +rec.pastes || 0, blurs: +rec.blurs || 0,
           timeline, rebuilt: false,
         });
-        mergeCode(cand, rec.code);
+        mergeCode(cand, rec.code); mergeVersions(cand, rec.versions);
+        if (validEmail(rec.email)) cand.email = rec.email;
+        if (typeof rec.locked === 'boolean') cand.locked = rec.locked;
+        if (rec.opensAt !== undefined) cand.opensAt = Number(rec.opensAt) || null;
         if (cand.status !== 'pending') cand.timeline.push({ t: Date.now(), type: 'restored', detail: 'recuperado del respaldo del admin' });
         restored++; broadcast(cand);
       }
@@ -259,6 +327,39 @@ async function handle(req, res) {
     if (mDetail && m === 'GET') {
       const c = db.candidates[mDetail[1]];
       return c ? send(res, 200, c) : send(res, 404, { error: 'No existe' });
+    }
+    const mSched = p.match(/^\/api\/admin\/candidates\/([\w-]+)\/(schedule|email)$/);
+    if (mSched && m === 'POST') {
+      const c = db.candidates[mSched[1]];
+      if (!c) return send(res, 404, { error: 'No existe' });
+      const body = await readBody(req).catch(() => ({}));
+      if (mSched[2] === 'schedule') {
+        if (c.status !== 'pending') return send(res, 409, { error: 'El candidato ya empezó.' });
+        const at = body.opensAt == null ? null : Number(body.opensAt);
+        if (at !== null && !(at > Date.now())) return send(res, 400, { error: 'La fecha debe ser en el futuro.' });
+        if (validTz(body.tz)) c.tz = body.tz;
+        c.locked = true; c.activatedAt = null; c.opensAt = at;
+        c.timeline.push({ t: Date.now(), type: at ? 'scheduled' : 'deactivated', detail: at ? fmtDate(at, c.tz) : undefined });
+        save(); broadcast(c);
+        return send(res, 200, summary(c));
+      }
+      // email: arma el mensaje; si hay Resend lo envía, si no, el admin lo abre en su cliente de correo.
+      if (body.to !== undefined) {
+        if (!validEmail(body.to)) return send(res, 400, { error: 'El correo no es válido.' });
+        c.email = body.to;
+      }
+      const msg = emailFor(c, String(body.link || ''));
+      if (!body.send) return send(res, 200, { ...msg, to: c.email, configured: !!RESEND_API_KEY });
+      if (!RESEND_API_KEY) return send(res, 501, { error: 'Envío directo no configurado.', ...msg });
+      if (!c.email) return send(res, 400, { error: 'Falta el correo del candidato.' });
+      const r = await fetch('https://api.resend.com/emails', {
+        method: 'POST', headers: { Authorization: `Bearer ${RESEND_API_KEY}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ from: MAIL_FROM, to: [c.email], subject: msg.subject, html: msg.html, text: msg.text }),
+      }).catch((e) => ({ ok: false, status: 0, text: async () => String(e) }));
+      if (!r.ok) { const t = await r.text(); console.error('[alcor] resend', r.status, t); return send(res, 502, { error: 'El proveedor de correo rechazó el envío: ' + t.slice(0, 200) }); }
+      c.emailedAt = Date.now(); c.timeline.push({ t: c.emailedAt, type: 'emailed', detail: c.email });
+      save(); broadcast(c);
+      return send(res, 200, { sent: true, to: c.email });
     }
     const mAct = p.match(/^\/api\/admin\/candidates\/([\w-]+)\/(activate|deactivate)$/);
     if (mAct && m === 'POST') {
@@ -310,7 +411,7 @@ async function handle(req, res) {
     const view = () => ({
       id: cand.id, name: cand.name, lang: cand.lang, minutes: cand.minutes, status: cand.status,
       startedAt: cand.startedAt, deadline: deadline(), serverNow: Date.now(), code: cand.code,
-      open: isOpen(cand), opensAt: cand.opensAt,
+      open: isOpen(cand), opensAt: cand.opensAt, tz: cand.tz, theme: cand.theme, versions: cand.versions || {},
       challenges: cand.challengeIds.map((id) => publicChallenge(challengeById(id), cand.lang)),
     });
     const fillStarters = () => cand.challengeIds.forEach((id) => {
@@ -340,7 +441,7 @@ async function handle(req, res) {
         if (cand.status === 'submitted') cand.submittedAt = Number(body.submittedAt) || now;
         cand.lastSeen = now; cand.rebuilt = false; cand.recovered = true;
         if (!isOpen(cand)) cand.activatedAt = cand.startedAt; // si ya había empezado, ya estaba activo
-        mergeCode(cand, body.code); fillStarters();
+        mergeCode(cand, body.code); mergeVersions(cand, body.versions); fillStarters();
         cand.timeline.push({ t: now, type: 'restored', detail: 'recuperado del respaldo del candidato' });
         save(); broadcast(cand);
       }
@@ -359,13 +460,16 @@ async function handle(req, res) {
       for (const ev of Array.isArray(body.events) ? body.events.slice(0, 50) : []) {
         const type = String(ev.type || '').slice(0, 20);
         const ex = cand.challengeIds.includes(ev.exercise) ? ev.exercise : undefined;
+        if (type === 'version' && ex) addVersion(cand, ex, { id: ev.id, t: ev.t, label: ev.label, code: ev.code, auto: ev.auto });
+        if (type === 'version' && ev.auto) continue; // las automáticas no llenan la actividad
         if (type === 'paste') cand.pastes++;
         if (type === 'blur') cand.blurs++;
         if (type === 'run') {
           cand.runs++;
           if (ex && ev.results) cand.results[ex] = { passed: +ev.results.passed || 0, total: +ev.results.total || 0, at: now };
         }
-        cand.timeline.push({ t: now, type, exercise: ex, detail: ev.detail ? String(ev.detail).slice(0, 200) : undefined,
+        const detail = type === 'version' ? ev.label : ev.detail;
+        cand.timeline.push({ t: now, type, exercise: ex, detail: detail ? String(detail).slice(0, 200) : undefined,
           passed: ev.results ? ev.results.passed : undefined, total: ev.results ? ev.results.total : undefined });
       }
       if (cand.timeline.length > 2000) cand.timeline = cand.timeline.slice(-2000);

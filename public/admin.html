@@ -6,66 +6,81 @@
   <meta name="robots" content="noindex">
   <title>Alcor · Admin</title>
   <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500&display=swap">
   <link rel="stylesheet" href="/vendor/codemirror/codemirror.css">
   <link rel="stylesheet" href="/styles.css">
+  <script>try { var t = localStorage.getItem('alcor:theme'); if (t === 'light' || t === 'dark') document.documentElement.dataset.theme = t; } catch (e) {}</script>
 </head>
 <body>
   <!-- Login -->
   <div id="login" class="center hidden">
-    <form class="card stack" id="login-form">
-      <div class="brand"><span class="logo"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l2.6 7.4L22 12l-7.4 2.6L12 22l-2.6-7.4L2 12l7.4-2.6z"/></svg></span>Alcor</div>
-      <div><h1>Panel del evaluador</h1><p>Acceso restringido. Ingresa la contraseña de administrador.</p></div>
-      <div><label for="pw">Contraseña</label><input id="pw" type="password" autocomplete="current-password" required autofocus></div>
+    <div class="corner theme-slot"></div>
+    <form class="center-card" id="login-form" style="max-width:360px">
+      <div class="brand logo-slot">Alcor</div>
+      <h1>Panel del evaluador</h1>
+      <p>Acceso restringido. Ingresa la contraseña de administrador.</p>
+      <label for="pw">Contraseña</label>
+      <input id="pw" type="password" autocomplete="current-password" required autofocus>
       <div class="error-text" id="login-err"></div>
-      <button class="btn primary" style="width:100%;justify-content:center;height:40px">Entrar</button>
+      <button class="btn primary lg block">Entrar</button>
     </form>
   </div>
 
-  <!-- Dashboard -->
-  <div id="dash" class="hidden">
-    <div class="topbar">
-      <div class="brand"><span class="logo"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l2.6 7.4L22 12l-7.4 2.6L12 22l-2.6-7.4L2 12l7.4-2.6z"/></svg></span>Alcor</div>
-      <span class="chip" id="stream-chip"><span class="dot"></span>Conectando…</span>
-      <div class="spacer"></div>
-      <a class="btn ghost" href="/api/admin/export">Exportar JSON</a>
-      <button class="btn" id="btn-logout">Salir</button>
-    </div>
-    <div class="admin-grid">
-      <aside>
-        <form class="form stack" id="new-form">
-          <div class="section-title" style="margin:0">Nuevo candidato</div>
-          <div><label for="f-name">Nombre</label><input id="f-name" placeholder="Ej. Ana López" required maxlength="80"></div>
-          <div class="row">
-            <div><label for="f-lang">Lenguaje</label><select id="f-lang"><option value="python">Python</option><option value="javascript">JavaScript</option></select></div>
-            <div><label for="f-min">Minutos</label><input id="f-min" type="number" min="5" max="240" value="20"></div>
+  <!-- App -->
+  <div id="dash" class="shell hidden">
+    <aside class="side">
+      <div class="brand logo-slot">Alcor</div>
+      <button class="nav-item on" data-view="cands" id="nav-cands"></button>
+      <button class="nav-item" data-view="new" id="nav-new"></button>
+      <button class="nav-item" data-view="catalog" id="nav-catalog"></button>
+      <div class="side-foot">
+        <span class="status" id="stream-status" style="padding:0 6px">Conectando…</span>
+        <div class="theme-slot"></div>
+        <div style="display:flex;gap:4px">
+          <a class="btn ghost sm" href="/api/admin/export" id="btn-export" title="Descargar todos los datos en JSON"></a>
+          <button class="btn ghost sm" id="btn-logout"></button>
+        </div>
+      </div>
+    </aside>
+    <main class="main">
+      <!-- Candidatos -->
+      <section id="view-cands" class="view" style="flex-direction:column">
+        <div class="bar">
+          <h1>Candidatos</h1>
+          <div class="seg" id="filter">
+            <button class="on" data-f="all">Todos</button><button data-f="ready">Preparados</button><button data-f="live">En curso</button><button data-f="done">Terminados</button>
           </div>
-          <div>
-            <label>Ejercicios <span id="f-count" class="muted"></span></label>
-            <div class="catalog" id="catalog"></div>
-            <div class="muted" style="font-size:12px;margin-top:6px">Marca uno o varios (máx. 6). Haz clic en el nombre para ver instrucciones y casos.</div>
+          <div class="spacer"></div>
+          <button class="btn sm hidden" id="btn-activate-all"></button>
+          <button class="btn primary sm" data-goto="new" id="btn-new-top"></button>
+        </div>
+        <div class="view">
+          <div class="split">
+            <div class="list-pane"><div class="list" id="cand-list"></div></div>
+            <div class="detail" id="detail"></div>
           </div>
-          <div>
-            <label>Activación</label>
-            <div class="seg" id="f-act">
-              <button type="button" data-v="now" class="on">Al instante</button>
-              <button type="button" data-v="manual">Preparado</button>
-              <button type="button" data-v="scheduled">Programado</button>
-            </div>
-            <div id="f-act-help" class="muted" style="font-size:12px;margin-top:6px">El candidato puede empezar en cuanto abra el link.</div>
-            <input id="f-opens" type="datetime-local" class="hidden" style="margin-top:8px">
-          </div>
-          <button class="btn primary" style="width:100%;justify-content:center" id="f-submit">Generar link</button>
-          <div id="new-link" class="hidden">
-            <div class="linkbox"><input id="new-url" readonly><button type="button" class="btn" id="btn-copy-new">Copiar</button></div>
-          </div>
-        </form>
-        <div class="bulk"><div class="section-title">Candidatos</div><button class="btn sm hidden" id="btn-activate-all"></button></div>
-        <div id="cand-list"></div>
-      </aside>
-      <section id="detail">
-        <div class="empty" style="padding:40px">Elige ejercicios del catálogo para ver sus instrucciones y casos, crea un candidato o selecciona uno para ver lo que escribe en tiempo real.</div>
+        </div>
       </section>
-    </div>
+
+      <!-- Nuevo candidato -->
+      <section id="view-new" class="view hidden" style="flex-direction:column">
+        <div class="bar"><h1>Nuevo candidato</h1></div>
+        <div class="view"><div class="page"><div class="page-inner" id="new-page"></div></div></div>
+      </section>
+
+      <!-- Catálogo -->
+      <section id="view-catalog" class="view hidden" style="flex-direction:column">
+        <div class="bar"><h1>Catálogo de ejercicios</h1><span class="faint mono" id="cat-count"></span></div>
+        <div class="view">
+          <div class="split" style="grid-template-columns:minmax(0,420px) minmax(0,1fr)">
+            <div class="list-pane"><div class="list" id="cat-list"></div></div>
+            <div class="detail" id="cat-detail"></div>
+          </div>
+        </div>
+      </section>
+    </main>
   </div>
 
   <script src="/vendor/codemirror/codemirror.js"></script>

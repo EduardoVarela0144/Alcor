@@ -6,61 +6,64 @@
   <meta name="robots" content="noindex">
   <title>Alcor · Evaluación</title>
   <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500&display=swap">
   <link rel="stylesheet" href="/vendor/codemirror/codemirror.css">
   <link rel="stylesheet" href="/styles.css">
+  <script>try { var t = localStorage.getItem('alcor:theme'); if (t === 'light' || t === 'dark') document.documentElement.dataset.theme = t; } catch (e) {}</script>
 </head>
 <body>
-  <!-- Cargando / error -->
+  <!-- Cargando / mensajes -->
   <div id="screen-msg" class="center">
-    <div class="card">
-      <div class="brand"><span class="logo"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l2.6 7.4L22 12l-7.4 2.6L12 22l-2.6-7.4L2 12l7.4-2.6z"/></svg></span>Alcor</div>
+    <div class="corner theme-slot"></div>
+    <div class="center-card">
+      <div class="brand logo-slot">Alcor</div>
       <h1 id="msg-title">Cargando…</h1>
       <p id="msg-text"></p>
     </div>
   </div>
 
-  <!-- Link preparado, aún no activado -->
+  <!-- Link preparado, aún no activo -->
   <div id="screen-locked" class="center hidden">
-    <div class="card" style="max-width:480px">
-      <div class="brand"><span class="logo"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l2.6 7.4L22 12l-7.4 2.6L12 22l-2.6-7.4L2 12l7.4-2.6z"/></svg></span>Alcor</div>
+    <div class="corner theme-slot"></div>
+    <div class="center-card" style="max-width:460px">
+      <div class="brand logo-slot">Alcor</div>
       <h1>Hola, <span id="l-name"></span></h1>
-      <p>Tu evaluación está lista, pero todavía no se activa. <span id="l-when"></span></p>
-      <div class="locked-box"><span class="chip"><span class="dot"></span>Esperando activación</span><span class="muted" id="l-countdown" style="font:600 13px var(--mono)"></span></div>
-      <p class="muted" style="font-size:13px;margin:16px 0 0">Deja esta página abierta: se actualizará sola en cuanto tu evaluador la active. El cronómetro empieza hasta que tú presiones “Comenzar”.</p>
+      <p>Tu evaluación está lista, pero todavía no inicia. Deja esta página abierta: se actualizará sola en cuanto se active.</p>
+      <div class="wait-box">
+        <span class="status ready" id="l-status">Esperando activación</span>
+        <div id="l-sched" class="hidden">
+          <div class="big" id="l-countdown">—</div>
+          <div class="muted" style="font-size:13px" id="l-local"></div>
+          <div class="faint" style="font-size:12px;margin-top:6px" id="l-other"></div>
+        </div>
+      </div>
+      <p class="faint" style="font-size:12.5px;margin-top:16px">El cronómetro de la prueba empieza hasta que tú presiones “Comenzar”.</p>
     </div>
   </div>
 
   <!-- Bienvenida -->
   <div id="screen-welcome" class="center hidden">
-    <div class="card" style="max-width:480px">
-      <div class="brand"><span class="logo"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l2.6 7.4L22 12l-7.4 2.6L12 22l-2.6-7.4L2 12l7.4-2.6z"/></svg></span>Alcor</div>
-      <h1>Hola, <span id="w-name"></span> 👋</h1>
+    <div class="corner theme-slot"></div>
+    <div class="center-card" style="max-width:480px">
+      <div class="brand logo-slot">Alcor</div>
+      <h1>Hola, <span id="w-name"></span></h1>
       <p>Tienes una evaluación técnica lista. Lee las indicaciones antes de comenzar.</p>
-      <div class="meta" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:16px">
-        <span class="chip" id="w-challenge"></span><span class="chip" id="w-lang"></span><span class="chip" id="w-min"></span>
-      </div>
-      <ul class="list">
-        <li>El cronómetro empieza cuando presiones “Comenzar” y no se puede pausar.</li>
-        <li>Tu código se ejecuta en tu navegador. Corre los tests las veces que quieras.</li>
-        <li>Tu código se guarda solo mientras escribes. Si se cierra la pestaña o se va el internet, no lo pierdes.</li>
-        <li>El evaluador ve tu código en tiempo real.</li>
-        <li>Se registran pegados de texto y cambios de pestaña.</li>
-        <li>Al enviar ya no podrás editar. Si se acaba el tiempo se envía solo.</li>
-      </ul>
-      <button class="btn primary" id="btn-start" style="width:100%;justify-content:center;height:40px">Comenzar evaluación</button>
-      <div class="muted" id="w-warm" style="font-size:12px;margin-top:10px;text-align:center"></div>
+      <div class="facts"><span class="tag" id="w-challenge"></span><span class="tag" id="w-lang"></span><span class="tag" id="w-min"></span></div>
+      <ul class="rules" id="w-rules"></ul>
+      <button class="btn primary lg block" id="btn-start">Comenzar evaluación</button>
+      <div class="faint" id="w-warm" style="font-size:12px;margin-top:10px;text-align:center"></div>
     </div>
   </div>
 
   <!-- Workspace -->
   <div id="screen-app" class="app hidden">
-    <aside class="sidebar">
-      <div class="sidebar-head">
-        <div class="brand"><span class="logo"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l2.6 7.4L22 12l-7.4 2.6L12 22l-2.6-7.4L2 12l7.4-2.6z"/></svg></span>Alcor</div>
-      </div>
-      <div class="exercise-tabs" id="ex-tabs"></div>
-      <div class="sidebar-body problem">
-        <div class="meta"><span class="chip" id="p-diff"></span><span class="chip" id="p-topic"></span><span class="chip" id="p-lang"></span></div>
+    <aside class="side">
+      <div class="side-head"><div class="brand logo-slot">Alcor</div></div>
+      <div class="ex-list" id="ex-tabs"></div>
+      <div class="problem">
+        <div style="display:flex;gap:6px;flex-wrap:wrap"><span class="tag" id="p-diff"></span><span class="tag" id="p-topic"></span></div>
         <h2 id="p-title"></h2>
         <div class="section-title">Instrucciones</div>
         <p id="p-desc"></p>
@@ -68,29 +71,29 @@
         <div class="example" id="p-fn"></div>
         <div class="section-title">Casos de ejemplo</div>
         <div id="p-examples"></div>
-        <p class="muted" style="font-size:12px">Además de estos casos, el evaluador corre casos ocultos.</p>
+        <p class="faint" style="font-size:12px;margin-top:10px">Además de estos casos, el evaluador corre casos ocultos.</p>
       </div>
     </aside>
     <main class="main">
-      <div class="topbar">
-        <span class="chip live" id="sync-chip"><span class="dot"></span>Guardado</span>
-        <span class="muted" style="font-size:13px" id="t-name"></span>
+      <div class="bar">
+        <span class="save" id="save">Guardado</span>
         <div class="spacer"></div>
         <span class="timer" id="timer">--:--</span>
-        <button class="btn" id="btn-reset" title="Restaurar código inicial">Reiniciar</button>
-        <button class="btn" id="btn-run">▶ Correr tests <span class="kbd" style="border-color:var(--border)">⌘↵</span></button>
+        <div class="theme-slot"></div>
+        <button class="btn" id="btn-versions" title="Guardar y restaurar versiones de tu código"></button>
+        <button class="btn" id="btn-run"></button>
         <button class="btn primary" id="btn-submit">Enviar</button>
       </div>
       <div class="editor-wrap"><textarea id="editor"></textarea></div>
       <div class="results">
         <div class="tabs">
-          <button class="tab active" data-tab="tests">Tests</button>
+          <button class="tab on" data-tab="tests">Tests</button>
           <button class="tab" data-tab="console">Consola</button>
           <span class="summary" id="summary"></span>
         </div>
         <div class="results-body">
-          <div id="tab-tests"><div class="empty">Presiona “Correr tests” para ejecutar tu solución contra los ejemplos.</div></div>
-          <div id="tab-console" class="hidden"><pre class="console muted">Aquí aparece lo que imprimas con print() / console.log().</pre></div>
+          <div id="tab-tests"><div class="empty">Presiona “Correr tests” para ejecutar tu solución contra los casos de ejemplo.</div></div>
+          <div id="tab-console" class="hidden"><pre class="console faint">Aquí aparece lo que imprimas con print() / console.log().</pre></div>
         </div>
       </div>
     </main>

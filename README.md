@@ -13,6 +13,14 @@ de administrador al que solo tú tienes acceso.
 - **Tests ocultos**: el candidato solo ve los ejemplos. Los casos ocultos solo llegan al admin, que
   puede re-ejecutar el código del candidato con todos los casos (los resultados del candidato son
   informativos y no se pueden falsificar para el admin).
+- **Versiones**: el candidato guarda copias con nombre (⌘S / Ctrl+S) y se crea una automática cada vez que corre
+  los tests. Puede ver cualquiera y restaurarla; antes de restaurar se guarda su código actual. Tú también ves sus versiones.
+- **Tema claro / oscuro / sistema**: lo eliges al preparar el link (tema inicial del candidato) y cada quien puede cambiarlo.
+- **Correo con el link**: mensaje listo con la fecha en la zona del candidato y en UTC. Se abre en tu cliente de correo
+  (mailto) o, si configuras `RESEND_API_KEY`, se envía directo desde Alcor.
+- **Zonas horarias**: programas la hora en la zona que elijas (la tuya o la del candidato); el candidato la ve convertida
+  a su hora local con cuenta regresiva.
+- **Bloquear / desbloquear** cualquier link que aún no se usa, aunque ya lo hayas mandado, y cambiar su fecha.
 - **Señales de integridad**: número de pegados (paste), cambios de pestaña, ejecuciones y una línea de tiempo.
 - **Tiempo real** vía Server-Sent Events (sin websockets ni buses de mensajes): ves el código ~0.5 s después
   de cada tecla, un indicador de "escribiendo…" y puedes seguir automáticamente el ejercicio que tiene abierto.
@@ -51,6 +59,8 @@ Variables de entorno:
 | `SESSION_SECRET` | Secreto para firmar links y la cookie de admin. Si cambia, los links anteriores dejan de funcionar. |
 | `DATA_DIR` | Carpeta donde se guarda `db.json` (por defecto `./data`). |
 | `PORT` | Puerto HTTP (por defecto 3000). |
+| `RESEND_API_KEY` | Opcional. API key de [Resend](https://resend.com) para enviar correos desde Alcor. |
+| `MAIL_FROM` | Opcional. Remitente, p. ej. `Alcor <evaluaciones@tudominio.com>` (dominio verificado en Resend). |
 
 ## Agregar retos
 
@@ -67,7 +77,8 @@ Define `ADMIN_PASSWORD` en *Environment*; `SESSION_SECRET` se genera solo.
 > del candidato y del admin. Para garantía total (p. ej. si borras el caché del navegador), agrega un
 > *Persistent Disk* en Render y apunta `DATA_DIR` a su ruta de montaje, o exporta el JSON al terminar.
 
-Diseño inspirado en playgrounds de código vistos en Mobbin (Browserbase, Replit): sidebar neutro con
-el enunciado, editor central limpio, acción principal con acento y panel inferior de resultados.
+Diseño basado en referencias de Mobbin: Linear y Vercel (sidebar neutro, listas densas, estados con punto de
+color, botón primario monocromo), Snowflake (historial de versiones) e incident.io (selector de zona horaria).
+Tipografía Geist / Geist Mono.
 
 Editor: [CodeMirror 5](https://codemirror.net/5/) (MIT) incluido en `public/vendor/`.
