@@ -19,6 +19,17 @@
     </div>
   </div>
 
+  <!-- Link preparado, aún no activado -->
+  <div id="screen-locked" class="center hidden">
+    <div class="card" style="max-width:480px">
+      <div class="brand"><span class="logo"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l2.6 7.4L22 12l-7.4 2.6L12 22l-2.6-7.4L2 12l7.4-2.6z"/></svg></span>Alcor</div>
+      <h1>Hola, <span id="l-name"></span></h1>
+      <p>Tu evaluación está lista, pero todavía no se activa. <span id="l-when"></span></p>
+      <div class="locked-box"><span class="chip"><span class="dot"></span>Esperando activación</span><span class="muted" id="l-countdown" style="font:600 13px var(--mono)"></span></div>
+      <p class="muted" style="font-size:13px;margin:16px 0 0">Deja esta página abierta: se actualizará sola en cuanto tu evaluador la active. El cronómetro empieza hasta que tú presiones “Comenzar”.</p>
+    </div>
+  </div>
+
   <!-- Bienvenida -->
   <div id="screen-welcome" class="center hidden">
     <div class="card" style="max-width:480px">

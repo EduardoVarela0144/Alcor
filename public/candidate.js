@@ -27,7 +27,7 @@
   const currentCode = () => Object.fromEntries(Object.entries(docs).map(([id, d]) => [id, d.getValue()]));
 
   function show(id) {
-    ['screen-msg', 'screen-welcome', 'screen-app'].forEach((s) => $('#' + s).classList.toggle('hidden', s !== id));
+    ['screen-msg', 'screen-locked', 'screen-welcome', 'screen-app'].forEach((s) => $('#' + s).classList.toggle('hidden', s !== id));
   }
   function message(title, text) { $('#msg-title').textContent = title; $('#msg-text').textContent = text; show('screen-msg'); }
 
@@ -51,11 +51,35 @@
   }
 
   function route() {
+    if (S.status === 'pending' && !S.open) return locked();
     if (S.status === 'pending') return welcome();
     if (S.status === 'in_progress') return workspace();
     finished = true;
     message(S.status === 'expired' ? 'Se terminó el tiempo' : '¡Evaluación enviada!',
       `Gracias, ${S.name}. Tu solución quedó registrada y el evaluador ya puede revisarla. Puedes cerrar esta pestaña.`);
+  }
+
+  // Link preparado: espera a que el admin lo active (o a la hora programada) y se actualiza solo.
+  let lockTimer = null;
+  function locked() {
+    $('#l-name').textContent = S.name;
+    const when = S.opensAt ? new Date(S.opensAt) : null;
+    $('#l-when').textContent = when ? `Se abrirá el ${when.toLocaleDateString('es-MX', { weekday: 'long', day: 'numeric', month: 'long' })} a las ${when.toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' })}.` : '';
+    show('screen-locked');
+    if (S.lang === 'python') AlcorRunner.warmup('python').catch(() => {});
+    clearInterval(lockTimer);
+    let polls = 0;
+    lockTimer = setInterval(async () => {
+      if (S.opensAt) $('#l-countdown').textContent = 'Faltan ' + fmtTime(S.opensAt - (Date.now() + clockOffset));
+      const due = S.opensAt && Date.now() + clockOffset >= S.opensAt;
+      if (++polls % 4 !== 0 && !due) return; // consulta cada ~4 s
+      try {
+        const r = await fetch(api());
+        if (!r.ok) { clearInterval(lockTimer); return message('Link no válido', 'Este link de evaluación fue revocado. Pide uno nuevo a tu evaluador.'); }
+        const d = await r.json();
+        if (d.open || d.status !== 'pending') { clearInterval(lockTimer); S = d; clockOffset = S.serverNow - Date.now(); route(); }
+      } catch { /* sin red: reintenta */ }
+    }, 1000);
   }
 
   function welcome() {
@@ -72,6 +96,7 @@
       $('#btn-start').disabled = true;
       const r = await fetch(api('/start'), { method: 'POST' });
       S = await r.json(); clockOffset = S.serverNow - Date.now();
+      $('#btn-start').disabled = false;
       writeLocal();
       route();
     };

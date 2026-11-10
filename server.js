@@ -117,13 +117,16 @@ function getCandidate(token) {
       id: p.id, name: p.name, lang: p.lang, challengeIds: ids, minutes: p.minutes,
       createdAt: p.iat, token, status: 'pending', startedAt: null, submittedAt: null,
       code: {}, lastSeen: null, typingAt: null, results: {}, runs: 0, pastes: 0, blurs: 0, timeline: [],
+      locked: !!p.locked, opensAt: Number(p.opensAt) || null, activatedAt: null,
       rebuilt: true, // creado desde el token: puede recuperarse con el respaldo del navegador
     };
     save();
   }
   return db.candidates[p.id];
 }
-const summary = (c) => ({ ...c, timeline: undefined, code: undefined, events: c.timeline.length });
+// Un link preparado queda bloqueado hasta que el admin lo activa o llega su hora programada.
+const isOpen = (c) => !c.locked || !!c.activatedAt || (!!c.opensAt && Date.now() >= c.opensAt);
+const summary = (c) => ({ ...c, timeline: undefined, code: undefined, events: c.timeline.length, open: isOpen(c) });
 
 // ---------- tiempo real (Server-Sent Events para el admin) ----------
 const streams = new Set();
@@ -205,7 +208,11 @@ async function handle(req, res) {
       const defMinutes = ids.reduce((s, id) => s + challengeById(id).minutes, 0);
       const minutes = Math.min(Math.max(parseInt(body.minutes, 10) || defMinutes || 30, 5), 240);
       if (!name || !lang || !ids.length) return send(res, 400, { error: 'Nombre, lenguaje y al menos un ejercicio son obligatorios.' });
+      const activation = ['now', 'manual', 'scheduled'].includes(body.activation) ? body.activation : 'now';
+      const opensAt = activation === 'scheduled' ? Number(body.opensAt) : null;
+      if (activation === 'scheduled' && !(opensAt > Date.now())) return send(res, 400, { error: 'La fecha de activación debe ser en el futuro.' });
       const payload = { id: crypto.randomBytes(9).toString('base64url'), name, lang, challenges: ids, minutes, iat: Date.now() };
+      if (activation !== 'now') { payload.locked = true; if (opensAt) payload.opensAt = opensAt; }
       const token = makeToken(payload);
       const cand = getCandidate(token);
       cand.rebuilt = false;
@@ -236,6 +243,7 @@ async function handle(req, res) {
         Object.assign(cand, {
           status: ok.includes(rec.status) ? rec.status : cand.status,
           startedAt: Number(rec.startedAt) || null, submittedAt: Number(rec.submittedAt) || null,
+          activatedAt: Number(rec.activatedAt) || (Number(rec.startedAt) ? Number(rec.startedAt) : null),
           lastSeen: Number(rec.lastSeen) || null, results: rec.results && typeof rec.results === 'object' ? rec.results : {},
           runs: +rec.runs || 0, pastes: +rec.pastes || 0, blurs: +rec.blurs || 0,
           timeline, rebuilt: false,
@@ -251,6 +259,27 @@ async function handle(req, res) {
     if (mDetail && m === 'GET') {
       const c = db.candidates[mDetail[1]];
       return c ? send(res, 200, c) : send(res, 404, { error: 'No existe' });
+    }
+    const mAct = p.match(/^\/api\/admin\/candidates\/([\w-]+)\/(activate|deactivate)$/);
+    if (mAct && m === 'POST') {
+      const c = db.candidates[mAct[1]];
+      if (!c) return send(res, 404, { error: 'No existe' });
+      if (mAct[2] === 'activate') {
+        if (!c.activatedAt) { c.activatedAt = Date.now(); c.timeline.push({ t: c.activatedAt, type: 'activated' }); }
+      } else {
+        if (c.status !== 'pending') return send(res, 409, { error: 'El candidato ya empezó; no se puede desactivar.' });
+        c.locked = true; c.activatedAt = null; c.opensAt = null; c.timeline.push({ t: Date.now(), type: 'deactivated' });
+      }
+      save(); broadcast(c);
+      return send(res, 200, summary(c));
+    }
+    if (p === '/api/admin/activate-all' && m === 'POST') {
+      let n = 0;
+      for (const c of Object.values(db.candidates)) {
+        if (c.status === 'pending' && !isOpen(c)) { c.activatedAt = Date.now(); c.timeline.push({ t: c.activatedAt, type: 'activated' }); broadcast(c); n++; }
+      }
+      if (n) save();
+      return send(res, 200, { activated: n });
     }
     if (mDetail && m === 'DELETE') {
       delete db.candidates[mDetail[1]];
@@ -281,6 +310,7 @@ async function handle(req, res) {
     const view = () => ({
       id: cand.id, name: cand.name, lang: cand.lang, minutes: cand.minutes, status: cand.status,
       startedAt: cand.startedAt, deadline: deadline(), serverNow: Date.now(), code: cand.code,
+      open: isOpen(cand), opensAt: cand.opensAt,
       challenges: cand.challengeIds.map((id) => publicChallenge(challengeById(id), cand.lang)),
     });
     const fillStarters = () => cand.challengeIds.forEach((id) => {
@@ -290,6 +320,7 @@ async function handle(req, res) {
     if (!mc[2] && m === 'GET') return send(res, 200, view());
 
     if (mc[2] === 'start' && m === 'POST') {
+      if (cand.status === 'pending' && !isOpen(cand)) return send(res, 423, { error: 'La evaluación aún no está activa.', ...view() });
       if (cand.status === 'pending') {
         cand.status = 'in_progress'; cand.startedAt = now; cand.lastSeen = now; cand.rebuilt = false;
         fillStarters();
@@ -308,6 +339,7 @@ async function handle(req, res) {
         cand.status = body.status === 'submitted' ? 'submitted' : 'in_progress';
         if (cand.status === 'submitted') cand.submittedAt = Number(body.submittedAt) || now;
         cand.lastSeen = now; cand.rebuilt = false; cand.recovered = true;
+        if (!isOpen(cand)) cand.activatedAt = cand.startedAt; // si ya había empezado, ya estaba activo
         mergeCode(cand, body.code); fillStarters();
         cand.timeline.push({ t: now, type: 'restored', detail: 'recuperado del respaldo del candidato' });
         save(); broadcast(cand);

@@ -26,7 +26,13 @@ de administrador al que solo tú tienes acceso.
 1. Entras a `/admin` con tu `ADMIN_PASSWORD`.
 2. Escribes el nombre y el lenguaje, marcas uno o varios ejercicios del catálogo (clic en el nombre para ver
    instrucciones y casos) y ajustas los minutos → **Generar link**.
-3. Mandas el link `/c/…` al candidato. El cronómetro arranca cuando presiona *Comenzar*.
+   Elige la **activación**:
+   - **Al instante**: el candidato puede empezar en cuanto abra el link.
+   - **Preparado**: dejas links listos con anticipación; el candidato ve "aún no está activa" hasta que
+     presionas **Activar ahora** (o **Activar los N preparados** para todos a la vez).
+   - **Programado**: se activa sola en la fecha y hora que elijas.
+3. Mandas el link `/c/…` al candidato. Su página se actualiza sola al activarse, y el cronómetro arranca
+   cuando presiona *Comenzar*.
 4. Ves su código en vivo, sus corridas de tests y su actividad. Al terminar, corres los tests ocultos.
 5. **Revocar** borra al candidato e invalida su link. **Exportar JSON** descarga todo.
 

@@ -13,7 +13,15 @@
   const STATUS = {
     pending: ['Sin iniciar', ''], in_progress: ['En curso', 'live'], submitted: ['Enviado', 'done'], expired: ['Tiempo agotado', 'warn'],
   };
-  const chip = (s) => `<span class="chip ${(STATUS[s] || STATUS.pending)[1]}"><span class="dot"></span>${(STATUS[s] || STATUS.pending)[0]}</span>`;
+  // ¿El link sigue bloqueado? (preparado sin activar o programado a futuro)
+  const isLocked = (c) => c.status === 'pending' && c.locked && !c.activatedAt && !(c.opensAt && Date.now() >= c.opensAt);
+  const shortDate = (t) => new Date(t).toLocaleString('es-MX', { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+  const chip = (s, c) => {
+    if (c && isLocked(c)) return c.opensAt
+      ? `<span class="chip ready" title="Se activa ${esc(shortDate(c.opensAt))}"><span class="dot"></span>Programado</span>`
+      : '<span class="chip ready"><span class="dot"></span>Preparado</span>';
+    return `<span class="chip ${(STATUS[s] || STATUS.pending)[1]}"><span class="dot"></span>${(STATUS[s] || STATUS.pending)[0]}</span>`;
+  };
   const linkOf = (c) => `${location.origin}/c/${c.token}`;
   const chById = (id) => challenges.find((x) => x.id === id);
   const idsOf = (c) => c.challengeIds || (c.challengeId ? [c.challengeId] : []);
@@ -133,12 +141,33 @@
   }
   $('#f-lang').onchange = () => { if (previewing && !selected) preview(previewing); };
 
+  let activation = 'now';
+  const ACT_HELP = {
+    now: 'El candidato puede empezar en cuanto abra el link.',
+    manual: 'Comparte el link desde hoy. Verá “aún no está activa” hasta que tú presiones Activar.',
+    scheduled: 'Se activa sola en la fecha y hora que elijas (también puedes activarla antes).',
+  };
+  document.querySelectorAll('#f-act button').forEach((b) => b.onclick = () => {
+    activation = b.dataset.v;
+    document.querySelectorAll('#f-act button').forEach((x) => x.classList.toggle('on', x === b));
+    $('#f-act-help').textContent = ACT_HELP[activation];
+    $('#f-opens').classList.toggle('hidden', activation !== 'scheduled');
+    if (activation === 'scheduled' && !$('#f-opens').value) {
+      const d = new Date(Date.now() + 24 * 3600e3); d.setHours(10, 0, 0, 0);
+      $('#f-opens').value = new Date(d - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+    }
+    $('#f-submit').textContent = activation === 'now' ? 'Generar link' : 'Preparar link';
+  });
+
   $('#new-form').onsubmit = async (e) => {
     e.preventDefault();
     const ids = selectedIds();
     if (!ids.length) return toast('Selecciona al menos un ejercicio del catálogo');
     try {
-      const c = await api('/api/admin/candidates', { method: 'POST', body: JSON.stringify({ name: $('#f-name').value, lang: $('#f-lang').value, challenges: ids, minutes: $('#f-min').value }) });
+      const c = await api('/api/admin/candidates', { method: 'POST', body: JSON.stringify({
+        name: $('#f-name').value, lang: $('#f-lang').value, challenges: ids, minutes: $('#f-min').value,
+        activation, opensAt: activation === 'scheduled' ? new Date($('#f-opens').value).getTime() : undefined,
+      }) });
       cands.set(c.id, c); remember(c);
       $('#new-url').value = linkOf(c);
       $('#new-link').classList.remove('hidden');
@@ -159,10 +188,25 @@
       const total = ids.reduce((s, id) => s + (res[id] ? res[id].total : 0), 0);
       const label = ids.length === 1 ? (chById(ids[0]) || {}).title : `${ids.length} ejercicios`;
       return `<div class="cand ${c.id === selected ? 'active' : ''}" data-id="${c.id}">
-        <div class="top"><span class="name">${esc(c.name)}</span>${chip(c.status)}</div>
-        <div class="sub">${esc(label || '')} · ${LANG[c.lang]}${total ? ` · ${passed}/${total} tests` : ''}${isTyping(c) ? ' · <span class="typing">escribiendo</span>' : ''}</div></div>`;
+        <div class="top"><span class="name">${esc(c.name)}</span>${chip(c.status, c)}</div>
+        <div class="sub">${isLocked(c) && c.opensAt ? `Abre ${esc(shortDate(c.opensAt))} · ` : ''}${esc(label || '')} · ${LANG[c.lang]}${total ? ` · ${passed}/${total} tests` : ''}${isTyping(c) ? ' · <span class="typing">escribiendo</span>' : ''}</div></div>`;
     }).join('') : '<div class="empty" style="padding:8px 16px">Aún no hay candidatos.</div>';
     document.querySelectorAll('.cand').forEach((el) => el.onclick = () => select(el.dataset.id));
+    const lockedN = list.filter(isLocked).length;
+    const bulk = $('#btn-activate-all');
+    bulk.classList.toggle('hidden', !lockedN);
+    bulk.textContent = `Activar ${lockedN === 1 ? 'preparado' : `los ${lockedN} preparados`}`;
+  }
+
+  $('#btn-activate-all').onclick = async () => {
+    const n = [...cands.values()].filter(isLocked).length;
+    if (!confirm(`¿Activar ${n} link(s) preparados? Los candidatos podrán empezar en cuanto los abran.`)) return;
+    const { activated } = await api('/api/admin/activate-all', { method: 'POST' });
+    toast(`${activated} link(s) activados`);
+  };
+  async function setActive(id, on) {
+    try { await api(`/api/admin/candidates/${id}/${on ? 'activate' : 'deactivate'}`, { method: 'POST' }); toast(on ? 'Link activado: el candidato ya puede empezar' : 'Link desactivado'); }
+    catch (err) { if (err.message !== '401') toast(err.message); }
   }
 
   async function select(id) {
@@ -180,9 +224,10 @@
     const ids = idsOf(c);
     $('#detail').innerHTML = `
       <div class="detail-head">
-        <h2>${esc(c.name)}</h2><span id="d-status">${chip(c.status)}</span><span id="d-typing"></span>
+        <h2>${esc(c.name)}</h2><span id="d-status">${chip(c.status, c)}</span><span id="d-typing"></span>
         <span class="muted">${LANG[c.lang]} · ${c.minutes} min</span>
         <div style="flex:1"></div>
+        <span id="d-act"></span>
         <button class="btn sm" id="d-copy">Copiar link</button>
         <button class="btn sm danger" id="d-del">Revocar</button>
       </div>
@@ -256,6 +301,17 @@
     renderPills();
   }
 
+  function renderActButton() {
+    const c = detailCache; const el = $('#d-act'); if (!c || !el) return;
+    let html = '';
+    if (isLocked(c)) html = `${c.opensAt ? `<span class="muted" style="font-size:12px;margin-right:6px">Abre ${esc(shortDate(c.opensAt))}</span>` : ''}<button class="btn sm primary" data-on="1">▶ Activar ahora</button>`;
+    else if (c.status === 'pending' && c.locked) html = '<button class="btn sm" data-on="0">Desactivar</button>';
+    if (el.dataset.html !== html) {
+      el.dataset.html = html; el.innerHTML = html;
+      const b = el.querySelector('button'); if (b) b.onclick = () => setActive(c.id, b.dataset.on === '1');
+    }
+  }
+
   function renderStats() {
     const c = detailCache; if (!c || !$('#d-stats')) return;
     const elapsed = c.startedAt ? (c.submittedAt || Date.now()) - c.startedAt : 0;
@@ -270,11 +326,12 @@
       stat('Ejecuciones', c.runs) +
       stat('Pegados', c.pastes) +
       stat('Cambios de pestaña', c.blurs);
-    $('#d-status').innerHTML = chip(c.status);
+    $('#d-status').innerHTML = chip(c.status, c);
+    renderActButton();
     $('#d-typing').innerHTML = isTyping(c) ? '<span class="typing">escribiendo…</span>' : '';
   }
 
-  const EV = { start: 'Inició la evaluación', run: 'Corrió tests', paste: 'Pegó texto', blur: 'Salió de la pestaña', focus: 'Regresó a la pestaña', submit: 'Envió su solución', expired: 'Se agotó el tiempo', reset: 'Reinició el código', restored: 'Sesión recuperada' };
+  const EV = { activated: 'Link activado', deactivated: 'Link desactivado', start: 'Inició la evaluación', run: 'Corrió tests', paste: 'Pegó texto', blur: 'Salió de la pestaña', focus: 'Regresó a la pestaña', submit: 'Envió su solución', expired: 'Se agotó el tiempo', reset: 'Reinició el código', restored: 'Sesión recuperada' };
   function renderTimeline() {
     const c = detailCache; if (!c || !$('#d-timeline')) return;
     const items = (c.timeline || []).slice(-200).reverse();

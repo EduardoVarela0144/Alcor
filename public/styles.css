@@ -209,3 +209,14 @@ pre.console.err { color: var(--bad); }
 .ex-pill { height: 28px; padding: 0 10px; border-radius: 999px; border: 1px solid var(--border); background: var(--panel); color: var(--text); font: 500 12px var(--sans); cursor: pointer; display: inline-flex; align-items: center; gap: 6px; }
 .ex-pill.active { background: var(--accent); color: #fff; border-color: var(--accent); }
 .ex-pill .r { font: 11px var(--mono); opacity: .8; }
+
+/* Links preparados */
+.locked-box { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 12px 14px; border: 1px dashed var(--border); border-radius: 10px; background: var(--sidebar); }
+.chip.ready { color: #4f46e5; background: rgba(79,70,229,.08); border-color: transparent; }
+.chip.ready .dot { border-radius: 2px; }
+.seg { display: grid; grid-template-columns: repeat(3, 1fr); border: 1px solid var(--border); border-radius: 8px; overflow: hidden; background: var(--panel); }
+.seg button { height: 34px; border: 0; background: none; color: var(--muted); font: 500 12.5px var(--sans); cursor: pointer; }
+.seg button + button { border-left: 1px solid var(--border); }
+.seg button.on { background: var(--accent-soft); color: var(--accent); }
+.bulk { display: flex; align-items: center; gap: 8px; margin: 16px 16px 4px; }
+.bulk .section-title { margin: 0; flex: 1; }

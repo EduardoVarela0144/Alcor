@@ -44,12 +44,22 @@
             <div class="catalog" id="catalog"></div>
             <div class="muted" style="font-size:12px;margin-top:6px">Marca uno o varios (máx. 6). Haz clic en el nombre para ver instrucciones y casos.</div>
           </div>
-          <button class="btn primary" style="width:100%;justify-content:center">Generar link</button>
+          <div>
+            <label>Activación</label>
+            <div class="seg" id="f-act">
+              <button type="button" data-v="now" class="on">Al instante</button>
+              <button type="button" data-v="manual">Preparado</button>
+              <button type="button" data-v="scheduled">Programado</button>
+            </div>
+            <div id="f-act-help" class="muted" style="font-size:12px;margin-top:6px">El candidato puede empezar en cuanto abra el link.</div>
+            <input id="f-opens" type="datetime-local" class="hidden" style="margin-top:8px">
+          </div>
+          <button class="btn primary" style="width:100%;justify-content:center" id="f-submit">Generar link</button>
           <div id="new-link" class="hidden">
             <div class="linkbox"><input id="new-url" readonly><button type="button" class="btn" id="btn-copy-new">Copiar</button></div>
           </div>
         </form>
-        <div class="section-title" style="margin:16px 16px 4px">Candidatos</div>
+        <div class="bulk"><div class="section-title">Candidatos</div><button class="btn sm hidden" id="btn-activate-all"></button></div>
         <div id="cand-list"></div>
       </aside>
       <section id="detail">
