@@ -1,6 +1,7 @@
 // Alcor — evaluación técnica en tiempo real.
 // Servidor Node sin dependencias ni base de datos: los links son tokens firmados
-// (HMAC) y el progreso se guarda en un archivo JSON local.
+// (HMAC) y el progreso se guarda en un archivo JSON local. Además, el navegador del
+// candidato y el del admin guardan respaldo y lo reenvían si el servidor se reinicia.
 
 const http = require('http');
 const fs = require('fs');
@@ -17,12 +18,14 @@ const PUBLIC = path.join(__dirname, 'public');
 const IS_PROD = process.env.NODE_ENV === 'production';
 const ADMIN_TTL_MS = 12 * 60 * 60 * 1000;
 const LANGS = ['python', 'javascript'];
+const MAX_EXERCISES = 6;
+const MAX_CODE = 100000;
 
 if (!ADMIN_PASSWORD) console.warn('[alcor] ADMIN_PASSWORD no está definido: el panel de admin queda deshabilitado.');
 
 // ---------- almacenamiento (archivo JSON) ----------
-let db = { candidates: {} };
-try { db = JSON.parse(fs.readFileSync(DB_FILE, 'utf8')); } catch { /* primer arranque */ }
+let db = { candidates: {}, revoked: {} };
+try { db = { candidates: {}, revoked: {}, ...JSON.parse(fs.readFileSync(DB_FILE, 'utf8')) }; } catch { /* primer arranque */ }
 let saveTimer = null;
 function save() {
   clearTimeout(saveTimer);
@@ -31,7 +34,7 @@ function save() {
     fs.writeFile(DB_FILE + '.tmp', JSON.stringify(db), (err) => {
       if (!err) fs.rename(DB_FILE + '.tmp', DB_FILE, () => {});
     });
-  }, 300);
+  }, 250);
 }
 
 // ---------- utilidades ----------
@@ -74,7 +77,7 @@ function send(res, status, data, headers = {}) {
   });
   res.end(body);
 }
-function readBody(req, limit = 512 * 1024) {
+function readBody(req, limit = 2 * 1024 * 1024) {
   return new Promise((resolve, reject) => {
     let size = 0; const chunks = [];
     req.on('data', (c) => {
@@ -91,20 +94,30 @@ function readBody(req, limit = 512 * 1024) {
 }
 const challengeById = (id) => CHALLENGES.find((c) => c.id === id);
 const publicChallenge = (c, lang) => ({
-  id: c.id, title: c.title, difficulty: c.difficulty, description: c.description,
+  id: c.id, title: c.title, difficulty: c.difficulty, topic: c.topic, description: c.description,
   fn: c.fn[lang], starter: c.starter[lang],
   tests: c.tests.filter((t) => !t.hidden).map(({ args, expected }) => ({ args, expected })),
 });
+// Mezcla código recibido ({ idEjercicio: código }) solo para ejercicios de este candidato.
+function mergeCode(cand, code) {
+  if (!code || typeof code !== 'object') return;
+  for (const id of cand.challengeIds) {
+    if (typeof code[id] === 'string') cand.code[id] = code[id].slice(0, MAX_CODE);
+  }
+}
 
 // Obtiene (o reconstruye desde el token) el registro de un candidato.
 function getCandidate(token) {
   const p = readToken(token);
-  if (!p || (db.revoked && db.revoked[p.id])) return null;
+  if (!p || db.revoked[p.id]) return null;
   if (!db.candidates[p.id]) {
+    const ids = (p.challenges || [p.challenge]).filter((id) => challengeById(id));
+    if (!ids.length) return null;
     db.candidates[p.id] = {
-      id: p.id, name: p.name, lang: p.lang, challengeId: p.challenge, minutes: p.minutes,
+      id: p.id, name: p.name, lang: p.lang, challengeIds: ids, minutes: p.minutes,
       createdAt: p.iat, token, status: 'pending', startedAt: null, submittedAt: null,
-      code: null, lastSeen: null, results: null, runs: 0, pastes: 0, blurs: 0, timeline: [],
+      code: {}, lastSeen: null, typingAt: null, results: {}, runs: 0, pastes: 0, blurs: 0, timeline: [],
+      rebuilt: true, // creado desde el token: puede recuperarse con el respaldo del navegador
     };
     save();
   }
@@ -114,8 +127,8 @@ const summary = (c) => ({ ...c, timeline: undefined, code: undefined, events: c.
 
 // ---------- tiempo real (Server-Sent Events para el admin) ----------
 const streams = new Set();
-function broadcast(cand, full = false) {
-  const msg = `data: ${JSON.stringify({ type: 'candidate', candidate: full ? cand : { ...summary(cand), code: cand.code } })}\n\n`;
+function broadcast(cand) {
+  const msg = `data: ${JSON.stringify({ type: 'candidate', candidate: { ...summary(cand), code: cand.code } })}\n\n`;
   streams.forEach((res) => res.write(msg));
 }
 setInterval(() => streams.forEach((res) => res.write(': ping\n\n')), 25000);
@@ -188,14 +201,51 @@ async function handle(req, res) {
       const body = await readBody(req).catch(() => ({}));
       const name = String(body.name || '').trim().slice(0, 80);
       const lang = LANGS.includes(body.lang) ? body.lang : null;
-      const ch = challengeById(body.challenge);
-      const minutes = Math.min(Math.max(parseInt(body.minutes, 10) || (ch && ch.minutes) || 30, 5), 240);
-      if (!name || !lang || !ch) return send(res, 400, { error: 'Nombre, lenguaje y reto son obligatorios.' });
-      const payload = { id: crypto.randomBytes(9).toString('base64url'), name, lang, challenge: ch.id, minutes, iat: Date.now() };
+      const ids = [...new Set(Array.isArray(body.challenges) ? body.challenges : [])].filter((id) => challengeById(id)).slice(0, MAX_EXERCISES);
+      const defMinutes = ids.reduce((s, id) => s + challengeById(id).minutes, 0);
+      const minutes = Math.min(Math.max(parseInt(body.minutes, 10) || defMinutes || 30, 5), 240);
+      if (!name || !lang || !ids.length) return send(res, 400, { error: 'Nombre, lenguaje y al menos un ejercicio son obligatorios.' });
+      const payload = { id: crypto.randomBytes(9).toString('base64url'), name, lang, challenges: ids, minutes, iat: Date.now() };
       const token = makeToken(payload);
       const cand = getCandidate(token);
+      cand.rebuilt = false;
       broadcast(cand);
       return send(res, 201, { ...summary(cand), token });
+    }
+    // Respaldo desde el navegador del admin: re-sube candidatos que el servidor perdió (p. ej. tras un reinicio).
+    if (p === '/api/admin/restore' && m === 'POST') {
+      const body = await readBody(req, 8 * 1024 * 1024).catch(() => ({}));
+      let restored = 0;
+      for (const rec of Array.isArray(body.candidates) ? body.candidates.slice(0, 500) : []) {
+        const tp = readToken(rec && rec.token);
+        if (!tp || db.revoked[tp.id]) continue;
+        const cur = db.candidates[tp.id];
+        if (cur && !cur.rebuilt && !cur.recovered) continue; // el servidor ya tiene datos completos
+        const ok = ['pending', 'in_progress', 'submitted', 'expired'];
+        const timeline = Array.isArray(rec.timeline) ? rec.timeline.slice(-2000) : [];
+        if (cur && cur.recovered) {
+          // El candidato ya recuperó su sesión (código y hora de inicio): solo sumamos el historial del admin.
+          cur.results = { ...(rec.results && typeof rec.results === 'object' ? rec.results : {}), ...cur.results };
+          cur.runs = Math.max(cur.runs, +rec.runs || 0); cur.pastes = Math.max(cur.pastes, +rec.pastes || 0); cur.blurs = Math.max(cur.blurs, +rec.blurs || 0);
+          cur.timeline = timeline.concat(cur.timeline).sort((a, b) => a.t - b.t).slice(-2000);
+          cur.recovered = false;
+          restored++; broadcast(cur);
+          continue;
+        }
+        const cand = getCandidate(rec.token);
+        Object.assign(cand, {
+          status: ok.includes(rec.status) ? rec.status : cand.status,
+          startedAt: Number(rec.startedAt) || null, submittedAt: Number(rec.submittedAt) || null,
+          lastSeen: Number(rec.lastSeen) || null, results: rec.results && typeof rec.results === 'object' ? rec.results : {},
+          runs: +rec.runs || 0, pastes: +rec.pastes || 0, blurs: +rec.blurs || 0,
+          timeline, rebuilt: false,
+        });
+        mergeCode(cand, rec.code);
+        if (cand.status !== 'pending') cand.timeline.push({ t: Date.now(), type: 'restored', detail: 'recuperado del respaldo del admin' });
+        restored++; broadcast(cand);
+      }
+      if (restored) save();
+      return send(res, 200, { restored });
     }
     const mDetail = p.match(/^\/api\/admin\/candidates\/([\w-]+)$/);
     if (mDetail && m === 'GET') {
@@ -204,13 +254,13 @@ async function handle(req, res) {
     }
     if (mDetail && m === 'DELETE') {
       delete db.candidates[mDetail[1]];
-      db.revoked = db.revoked || {}; db.revoked[mDetail[1]] = Date.now(); save();
+      db.revoked[mDetail[1]] = Date.now(); save();
       streams.forEach((r) => r.write(`data: ${JSON.stringify({ type: 'deleted', id: mDetail[1] })}\n\n`));
       return send(res, 200, { ok: true });
     }
     if (p === '/api/admin/stream' && m === 'GET') {
       res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-store', Connection: 'keep-alive', 'X-Accel-Buffering': 'no' });
-      res.write('retry: 3000\n\n');
+      res.write('retry: 2000\n\n');
       streams.add(res);
       req.on('close', () => streams.delete(res));
       return;
@@ -222,26 +272,44 @@ async function handle(req, res) {
   }
 
   // ----- Candidato -----
-  const mc = p.match(/^\/api\/session\/([^/]+)(?:\/(start|sync|submit))?$/);
+  const mc = p.match(/^\/api\/session\/([^/]+)(?:\/(start|sync|submit|resume))?$/);
   if (mc) {
     const cand = getCandidate(mc[1]);
     if (!cand) return send(res, 404, { error: 'Link inválido.' });
-    const ch = challengeById(cand.challengeId);
     const now = Date.now();
-    const deadline = cand.startedAt ? cand.startedAt + cand.minutes * 60000 : null;
+    const deadline = () => (cand.startedAt ? cand.startedAt + cand.minutes * 60000 : null);
     const view = () => ({
-      name: cand.name, lang: cand.lang, minutes: cand.minutes, status: cand.status,
-      startedAt: cand.startedAt, deadline: cand.startedAt ? cand.startedAt + cand.minutes * 60000 : null,
-      serverNow: Date.now(), code: cand.code, challenge: publicChallenge(ch, cand.lang),
+      id: cand.id, name: cand.name, lang: cand.lang, minutes: cand.minutes, status: cand.status,
+      startedAt: cand.startedAt, deadline: deadline(), serverNow: Date.now(), code: cand.code,
+      challenges: cand.challengeIds.map((id) => publicChallenge(challengeById(id), cand.lang)),
+    });
+    const fillStarters = () => cand.challengeIds.forEach((id) => {
+      if (typeof cand.code[id] !== 'string') cand.code[id] = challengeById(id).starter[cand.lang];
     });
 
     if (!mc[2] && m === 'GET') return send(res, 200, view());
 
     if (mc[2] === 'start' && m === 'POST') {
       if (cand.status === 'pending') {
-        cand.status = 'in_progress'; cand.startedAt = now; cand.lastSeen = now;
-        cand.code = cand.code ?? ch.starter[cand.lang];
+        cand.status = 'in_progress'; cand.startedAt = now; cand.lastSeen = now; cand.rebuilt = false;
+        fillStarters();
         cand.timeline.push({ t: now, type: 'start' });
+        save(); broadcast(cand);
+      }
+      return send(res, 200, view());
+    }
+
+    // Respaldo desde el navegador del candidato: si el servidor perdió la sesión, se recupera
+    // con la hora de inicio y el código guardados localmente.
+    if (mc[2] === 'resume' && m === 'POST') {
+      const body = await readBody(req).catch(() => ({}));
+      if (cand.rebuilt && cand.status === 'pending' && Number(body.startedAt)) {
+        cand.startedAt = Math.min(Math.max(Number(body.startedAt), cand.createdAt), now);
+        cand.status = body.status === 'submitted' ? 'submitted' : 'in_progress';
+        if (cand.status === 'submitted') cand.submittedAt = Number(body.submittedAt) || now;
+        cand.lastSeen = now; cand.rebuilt = false; cand.recovered = true;
+        mergeCode(cand, body.code); fillStarters();
+        cand.timeline.push({ t: now, type: 'restored', detail: 'recuperado del respaldo del candidato' });
         save(); broadcast(cand);
       }
       return send(res, 200, view());
@@ -251,32 +319,38 @@ async function handle(req, res) {
       if (cand.status !== 'in_progress') return send(res, 409, { error: 'La evaluación no está activa.', status: cand.status });
       const body = await readBody(req).catch(() => null);
       if (!body) return send(res, 400, { error: 'Bad request' });
-      if (typeof body.code === 'string') cand.code = body.code.slice(0, 100000);
+      const before = JSON.stringify(cand.code);
+      mergeCode(cand, body.code);
+      if (JSON.stringify(cand.code) !== before) cand.typingAt = now;
       cand.lastSeen = now;
+      if (typeof body.active === 'string' && cand.challengeIds.includes(body.active)) cand.active = body.active;
       for (const ev of Array.isArray(body.events) ? body.events.slice(0, 50) : []) {
         const type = String(ev.type || '').slice(0, 20);
+        const ex = cand.challengeIds.includes(ev.exercise) ? ev.exercise : undefined;
         if (type === 'paste') cand.pastes++;
         if (type === 'blur') cand.blurs++;
         if (type === 'run') {
           cand.runs++;
-          if (ev.results) cand.results = { passed: +ev.results.passed || 0, total: +ev.results.total || 0, at: now };
+          if (ex && ev.results) cand.results[ex] = { passed: +ev.results.passed || 0, total: +ev.results.total || 0, at: now };
         }
-        cand.timeline.push({ t: now, type, detail: ev.detail ? String(ev.detail).slice(0, 200) : undefined,
+        cand.timeline.push({ t: now, type, exercise: ex, detail: ev.detail ? String(ev.detail).slice(0, 200) : undefined,
           passed: ev.results ? ev.results.passed : undefined, total: ev.results ? ev.results.total : undefined });
       }
       if (cand.timeline.length > 2000) cand.timeline = cand.timeline.slice(-2000);
-      const expired = deadline && now > deadline + 30000;
-      if (expired) { cand.status = 'expired'; cand.submittedAt = now; cand.timeline.push({ t: now, type: 'expired' }); }
+      const d = deadline();
+      if (d && now > d + 30000) { cand.status = 'expired'; cand.submittedAt = now; cand.timeline.push({ t: now, type: 'expired' }); }
       save(); broadcast(cand);
-      return send(res, 200, { ok: true, status: cand.status });
+      return send(res, 200, { ok: true, status: cand.status, savedAt: now });
     }
 
     if (mc[2] === 'submit' && m === 'POST') {
       if (cand.status !== 'in_progress') return send(res, 409, { error: 'La evaluación ya terminó.', status: cand.status });
       const body = await readBody(req).catch(() => ({}));
-      if (typeof body.code === 'string') cand.code = body.code.slice(0, 100000);
-      cand.status = 'submitted'; cand.submittedAt = now; cand.lastSeen = now;
-      cand.timeline.push({ t: now, type: 'submit' });
+      mergeCode(cand, body.code);
+      const d = deadline();
+      cand.status = body.auto || (d && now > d + 30000) ? 'expired' : 'submitted';
+      cand.submittedAt = now; cand.lastSeen = now;
+      cand.timeline.push({ t: now, type: cand.status === 'expired' ? 'expired' : 'submit' });
       save(); broadcast(cand);
       return send(res, 200, view());
     }

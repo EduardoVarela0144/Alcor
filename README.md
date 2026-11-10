@@ -1,7 +1,7 @@
 # ✦ Alcor
 
-Evaluaciones técnicas en tiempo real. Escribes el nombre del candidato, Alcor genera un link
-y el candidato resuelve un reto en **Python** o **JavaScript** dentro de un editor en el navegador,
+Evaluaciones técnicas en tiempo real. Escribes el nombre del candidato, eliges uno o varios ejercicios
+del catálogo, Alcor genera un link y el candidato los resuelve en **Python** o **JavaScript** dentro de un editor en el navegador,
 con **tests automáticos**. Tú ves su código, ejecuciones y actividad **en vivo** desde un panel
 de administrador al que solo tú tienes acceso.
 
@@ -14,12 +14,18 @@ de administrador al que solo tú tienes acceso.
   puede re-ejecutar el código del candidato con todos los casos (los resultados del candidato son
   informativos y no se pueden falsificar para el admin).
 - **Señales de integridad**: número de pegados (paste), cambios de pestaña, ejecuciones y una línea de tiempo.
-- **Tiempo real** vía Server-Sent Events (sin websockets ni buses de mensajes).
+- **Tiempo real** vía Server-Sent Events (sin websockets ni buses de mensajes): ves el código ~0.5 s después
+  de cada tecla, un indicador de "escribiendo…" y puedes seguir automáticamente el ejercicio que tiene abierto.
+- **Catálogo de 17 ejercicios** (Fácil / Media / Difícil) con vista previa de instrucciones y casos antes de asignarlos.
+- **Autoguardado triple**: servidor (cada tecla, con reintentos), `localStorage` del candidato (sobrevive a
+  recargas, cierres y caídas de internet) y `localStorage` del admin. Si el servidor se reinicia y pierde
+  `db.json`, la sesión se reconstruye sola con esos respaldos (código, hora de inicio, ejecuciones e historial).
 
 ## Flujo
 
 1. Entras a `/admin` con tu `ADMIN_PASSWORD`.
-2. Escribes el nombre, eliges reto, lenguaje y minutos → **Generar link**.
+2. Escribes el nombre y el lenguaje, marcas uno o varios ejercicios del catálogo (clic en el nombre para ver
+   instrucciones y casos) y ajustas los minutos → **Generar link**.
 3. Mandas el link `/c/…` al candidato. El cronómetro arranca cuando presiona *Comenzar*.
 4. Ves su código en vivo, sus corridas de tests y su actividad. Al terminar, corres los tests ocultos.
 5. **Revocar** borra al candidato e invalida su link. **Exportar JSON** descarga todo.
@@ -42,7 +48,7 @@ Variables de entorno:
 
 ## Agregar retos
 
-Edita `challenges.js`. Cada reto define el enunciado, el nombre de la función por lenguaje, el código
+Edita `challenges.js`. Cada ejercicio define el enunciado, el nombre de la función por lenguaje, el código
 inicial y los casos `{ args, expected, hidden? }`. Las entradas y salidas son JSON.
 
 ## Despliegue en Render
@@ -51,9 +57,9 @@ El repo incluye `render.yaml` (Blueprint). Servicio web Node, plan free, `startC
 Define `ADMIN_PASSWORD` en *Environment*; `SESSION_SECRET` se genera solo.
 
 > **Nota sobre el plan free**: el disco es efímero y el servicio se duerme tras 15 min sin tráfico.
-> Los links siguen funcionando (son firmados), pero el progreso guardado puede perderse en un reinicio.
-> Revisa/exporta los resultados al terminar cada evaluación, o agrega un *Persistent Disk* en Render
-> y apunta `DATA_DIR` a su ruta de montaje.
+> Los links siguen funcionando (son firmados) y el progreso se reconstruye con los respaldos del navegador
+> del candidato y del admin. Para garantía total (p. ej. si borras el caché del navegador), agrega un
+> *Persistent Disk* en Render y apunta `DATA_DIR` a su ruta de montaje, o exporta el JSON al terminar.
 
 Diseño inspirado en playgrounds de código vistos en Mobbin (Browserbase, Replit): sidebar neutro con
 el enunciado, editor central limpio, acción principal con acento y panel inferior de resultados.

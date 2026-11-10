@@ -31,7 +31,8 @@
       <ul class="list">
         <li>El cronómetro empieza cuando presiones “Comenzar” y no se puede pausar.</li>
         <li>Tu código se ejecuta en tu navegador. Corre los tests las veces que quieras.</li>
-        <li>Tu progreso se guarda automáticamente y el evaluador lo ve en tiempo real.</li>
+        <li>Tu código se guarda solo mientras escribes. Si se cierra la pestaña o se va el internet, no lo pierdes.</li>
+        <li>El evaluador ve tu código en tiempo real.</li>
         <li>Se registran pegados de texto y cambios de pestaña.</li>
         <li>Al enviar ya no podrás editar. Si se acaba el tiempo se envía solo.</li>
       </ul>
@@ -46,19 +47,22 @@
       <div class="sidebar-head">
         <div class="brand"><span class="logo"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l2.6 7.4L22 12l-7.4 2.6L12 22l-2.6-7.4L2 12l7.4-2.6z"/></svg></span>Alcor</div>
       </div>
+      <div class="exercise-tabs" id="ex-tabs"></div>
       <div class="sidebar-body problem">
-        <div class="meta"><span class="chip" id="p-diff"></span><span class="chip" id="p-lang"></span></div>
+        <div class="meta"><span class="chip" id="p-diff"></span><span class="chip" id="p-topic"></span><span class="chip" id="p-lang"></span></div>
         <h2 id="p-title"></h2>
+        <div class="section-title">Instrucciones</div>
         <p id="p-desc"></p>
         <div class="section-title">Función a implementar</div>
         <div class="example" id="p-fn"></div>
-        <div class="section-title">Ejemplos</div>
+        <div class="section-title">Casos de ejemplo</div>
         <div id="p-examples"></div>
+        <p class="muted" style="font-size:12px">Además de estos casos, el evaluador corre casos ocultos.</p>
       </div>
     </aside>
     <main class="main">
       <div class="topbar">
-        <span class="chip live" id="sync-chip"><span class="dot"></span>En vivo</span>
+        <span class="chip live" id="sync-chip"><span class="dot"></span>Guardado</span>
         <span class="muted" style="font-size:13px" id="t-name"></span>
         <div class="spacer"></div>
         <span class="timer" id="timer">--:--</span>
