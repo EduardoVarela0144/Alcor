@@ -21,7 +21,7 @@ const LANGS = ['python', 'javascript'];
 const MAX_EXERCISES = 6;
 const MAX_CODE = 100000;
 const MAX_VERSIONS = 30;
-const THEMES = ['system', 'light', 'dark'];
+const THEMES = require('./public/themes.js').IDS; // 'system' + todos los temas disponibles
 // Correo opcional vía Resend (https://resend.com). Sin estas variables, el admin usa su propio cliente de correo (mailto).
 const RESEND_API_KEY = process.env.RESEND_API_KEY || '';
 const MAIL_FROM = process.env.MAIL_FROM || 'Alcor <onboarding@resend.dev>';

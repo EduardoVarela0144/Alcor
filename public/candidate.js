@@ -1,6 +1,6 @@
 (function () {
   const { $, $$, esc, md, json, LANG, signature, renderResults, fmtTime, fmtCountdown, hhmm, icon, LOGO,
-    themeSwitch, getTheme, applyTheme, localTz, fmtIn, tzLabel, modal, confirmBox, toast } = UI;
+    themeSwitch, getTheme, applyTheme, onThemeChange, localTz, fmtIn, tzLabel, modal, confirmBox, toast } = UI;
   const token = decodeURIComponent(location.pathname.split('/c/')[1] || '');
   const api = (sub = '') => `/api/session/${encodeURIComponent(token)}${sub}`;
   const LS_KEY = 'alcor:' + token.slice(-24);
@@ -20,6 +20,7 @@
   $$('.logo-slot').forEach((el) => { el.innerHTML = LOGO + 'Alcor'; });
   const mountTheme = () => $$('.theme-slot').forEach((el) => { el.innerHTML = themeSwitch(S && S.theme); });
   mountTheme();
+  onThemeChange(() => { if (editor) editor.refresh(); }); // re-medir si cambia el tamaño del código
   $('#btn-run').innerHTML = `${icon('play')} Correr tests <span class="kbd">⌘↵</span>`;
   $('#btn-versions').innerHTML = `${icon('history')} Versiones`;
 

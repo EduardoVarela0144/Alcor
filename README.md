@@ -15,7 +15,9 @@ de administrador al que solo tú tienes acceso.
   informativos y no se pueden falsificar para el admin).
 - **Versiones**: el candidato guarda copias con nombre (⌘S / Ctrl+S) y se crea una automática cada vez que corre
   los tests. Puede ver cualquiera y restaurarla; antes de restaurar se guarda su código actual. Tú también ves sus versiones.
-- **Tema claro / oscuro / sistema**: lo eliges al preparar el link (tema inicial del candidato) y cada quien puede cambiarlo.
+- **22 temas + Sistema** (Claro, Papel, GitHub, Solarized, Catppuccin, Rosé Pine, Menta, Oscuro, Medianoche, Dracula,
+  Nord, One Dark, Tokyo Night, Gruvbox, Monokai, Océano y dos de alto contraste) con vista previa, más tamaño del código.
+  Eliges el tema inicial del candidato al preparar el link y cada quien puede cambiarlo. Se definen en `public/themes.js`.
 - **Correo con el link**: mensaje listo con la fecha en la zona del candidato y en UTC. Se abre en tu cliente de correo
   (mailto) o, si configuras `RESEND_API_KEY`, se envía directo desde Alcor.
 - **Zonas horarias**: programas la hora en la zona que elijas (la tuya o la del candidato); el candidato la ve convertida

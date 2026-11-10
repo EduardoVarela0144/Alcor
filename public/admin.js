@@ -1,7 +1,8 @@
 (function () {
   const { $, $$, esc, md, json, LANG, renderResults, toast, fmtTime, fmtCountdown, signature, icon, LOGO, ago, hhmm,
-    themeSwitch, localTz, zonedToUtc, utcToZonedInput, tzLabel, tzShort, fmtIn, tzOptions, modal, confirmBox } = UI;
+    themeSwitch, themeOptions, onThemeChange, localTz, zonedToUtc, utcToZonedInput, tzLabel, tzShort, fmtIn, tzOptions, modal, confirmBox } = UI;
   const CACHE_KEY = 'alcor:admin-cache';
+  onThemeChange(() => { if (viewer) viewer.refresh(); }); // re-medir el editor si cambia el tamaño del código
   let challenges = [];
   let mailConfigured = false;
   const cands = new Map();
@@ -128,7 +129,7 @@
           </div>
           <div class="grid2" style="margin-top:14px">
             <div><span class="label">Lenguaje</span><div class="seg full">${segBtn('lang', 'python', 'Python')}${segBtn('lang', 'javascript', 'JavaScript')}</div></div>
-            <div><span class="label">Tema del editor del candidato</span><div class="seg full">${segBtn('theme', 'system', 'Sistema', 'monitor')}${segBtn('theme', 'light', 'Claro', 'sun')}${segBtn('theme', 'dark', 'Oscuro', 'moon')}</div>
+            <div><label for="f-theme">Tema inicial del candidato</label><select id="f-theme">${themeOptions(form.theme)}</select>
             <div class="hint">El candidato puede cambiarlo cuando quiera.</div></div>
           </div>
         </div></div>
@@ -207,6 +208,7 @@
     $('#f-min').oninput = () => { form.minutesTouched = true; updateSel(); };
     $('#f-name').oninput = (e) => { form.name = e.target.value; };
     $('#f-email').oninput = (e) => { form.email = e.target.value; };
+    $('#f-theme').onchange = (e) => { form.theme = e.target.value; };
     $('#f-date').oninput = (e) => { form.date = e.target.value; updateTzPreview(); };
     $('#f-tz').onchange = (e) => { form.tz = e.target.value; updateTzPreview(); };
     if (form.minutes) $('#f-min').value = form.minutes;
@@ -387,8 +389,7 @@
           <ul class="timeline" id="d-timeline"></ul>
         </div>
       </div>`;
-    viewer = CodeMirror.fromTextArea($('#d-code'), { mode: c.lang === 'python' ? 'python' : 'javascript', lineNumbers: true, readOnly: true });
-    $('#d-follow').onchange = (e) => { follow = e.target.checked; if (follow && c.active) showExercise(c.active); };
+    viewer = CodeMirror.fromTextArea($('#d-code'), { mode: c.lang === 'python' ? 'python' : 'javascript', lineNumbers: true, readOnly: true });    $('#d-follow').onchange = (e) => { follow = e.target.checked; if (follow && c.active) showExercise(c.active); };
     $('#d-run').onclick = runHidden;
     renderHeadState(); showExercise(viewEx); renderStats(); renderTimeline();
   }

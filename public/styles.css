@@ -266,7 +266,7 @@ pre.code { margin: 0; padding: 10px 12px; border: 1px solid var(--border); borde
 .editor-wrap { flex: 1; min-height: 0; position: relative; background: var(--panel); }
 .viewing-banner { display: flex; align-items: center; gap: 10px; padding: 7px 16px; background: color-mix(in srgb, var(--violet) 10%, var(--panel)); color: var(--text); font-size: 12.5px; border-bottom: 1px solid var(--border); }
 
-.CodeMirror { height: 100% !important; font: 13.5px/1.65 var(--mono) !important; background: var(--panel) !important; color: var(--text) !important; }
+.CodeMirror { height: 100% !important; font: var(--code-size, 13.5px)/1.65 var(--mono) !important; background: var(--panel) !important; color: var(--text) !important; }
 .CodeMirror-gutters { background: var(--panel) !important; border-right: none !important; }
 .CodeMirror-linenumber { color: var(--faint) !important; padding-right: 14px !important; }
 .CodeMirror-cursor { border-left: 2px solid var(--brand) !important; }
@@ -347,3 +347,25 @@ pre.console.err { color: var(--red); }
 .vitem svg, .notice svg, .section-title svg, .rules svg, .timer svg, .viewing-banner svg, .seg svg, .pill svg { width: 14px; height: 14px; flex: none; }
 .vitem svg { color: var(--faint); }
 .vitem.on svg { color: var(--text); }
+
+/* ---------- selector de temas ---------- */
+.theme-btn { gap: 7px; padding: 0 9px 0 6px; }
+.theme-btn .tname { max-width: 120px; overflow: hidden; text-overflow: ellipsis; }
+.swatch { width: 16px; height: 16px; border-radius: 5px; border: 1px solid; position: relative; flex: none; display: inline-block; overflow: hidden; }
+.swatch i { position: absolute; right: 2px; bottom: 2px; width: 6px; height: 6px; border-radius: 2px; }
+.picker { padding: 16px 18px 20px; }
+.theme-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 10px; }
+.theme-card { display: flex; flex-direction: column; gap: 7px; padding: 6px; border-radius: 10px; border: 1px solid var(--border); background: var(--panel); cursor: pointer; text-align: left; color: var(--text); transition: border-color .12s, box-shadow .12s; }
+.theme-card:hover { border-color: var(--border-strong); }
+.theme-card.on { border-color: var(--brand); box-shadow: 0 0 0 3px var(--focus); }
+.tc-name { font: 500 12.5px var(--sans); display: flex; align-items: center; gap: 6px; padding: 0 2px 2px; }
+.tc-name svg { width: 13px; height: 13px; color: var(--brand); margin-left: auto; }
+.tp { display: flex; height: 70px; border-radius: 6px; border: 1px solid; overflow: hidden; flex: 1; }
+.tp-split { display: flex; gap: 0; height: 70px; border-radius: 6px; overflow: hidden; }
+.tp-split .tp { border-radius: 0; }
+.tp-side { width: 26%; border-right: 1px solid; padding: 7px 5px; display: flex; flex-direction: column; gap: 5px; }
+.tp-side i { display: block; height: 4px; border-radius: 2px; opacity: .55; }
+.tp-main { flex: 1; padding: 8px 8px; display: flex; flex-direction: column; gap: 5px; position: relative; }
+.tp-main i { display: block; height: 4px; border-radius: 2px; }
+.tp-main b { position: absolute; right: 7px; bottom: 7px; width: 22px; height: 9px; border-radius: 3px; }
+.cm-s-default .cm-comment { color: var(--syn-comment, var(--faint)); }

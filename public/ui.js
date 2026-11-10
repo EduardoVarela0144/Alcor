@@ -46,22 +46,67 @@ window.UI = (function () {
   const icon = (n) => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${P[n] || ''}</svg>`;
   const LOGO = '<span class="logo"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l2.6 7.4L22 12l-7.4 2.6L12 22l-2.6-7.4L2 12l7.4-2.6z"/></svg></span>';
 
-  // ---------- tema claro / oscuro / sistema ----------
-  const THEME_KEY = 'alcor:theme';
-  const getTheme = () => { try { return localStorage.getItem(THEME_KEY); } catch { return null; } };
-  function applyTheme(t) {
-    if (t === 'light' || t === 'dark') document.documentElement.dataset.theme = t;
-    else delete document.documentElement.dataset.theme;
+  // ---------- temas (ver themes.js) ----------
+  const TH = window.AlcorThemes;
+  let themeFallback = null; // tema que preparó el admin para el candidato (si él no ha elegido uno)
+  const themeId = () => TH.get() || themeFallback || 'system';
+  const getTheme = TH.get;
+  function applyTheme(id) { themeFallback = id; if (!TH.get()) TH.apply(id); refreshThemeButtons(); }
+  function setTheme(id) { TH.set(id); refreshThemeButtons(); }
+  const SYSTEM = { id: 'system', name: 'Sistema' };
+  function swatch(t) {
+    if (t.id === 'system') {
+      const l = TH.byId('light').c, d = TH.byId('dark').c;
+      return `<span class="swatch" style="background:linear-gradient(135deg,${l.panel} 50%,${d.panel} 50%);border-color:${l.borderStrong}"></span>`;
+    }
+    return `<span class="swatch" style="background:${t.c.panel};border-color:${t.c.borderStrong}"><i style="background:${t.c.primary}"></i></span>`;
   }
-  function setTheme(t) { try { localStorage.setItem(THEME_KEY, t); } catch { /* */ } applyTheme(t); $$('[data-theme-seg] button').forEach((b) => b.classList.toggle('on', b.dataset.v === t)); }
-  // Control segmentado de tema; `fallback` es el tema que preparó el admin para este candidato.
+  const themeLabel = (id) => (TH.byId(id) || SYSTEM).name;
+  function themeBtnInner() { const id = themeId(); return `${swatch(TH.byId(id) || SYSTEM)}<span class="tname">${esc(themeLabel(id))}</span>`; }
+  function refreshThemeButtons() { $$('[data-theme-open]').forEach((b) => { b.innerHTML = themeBtnInner(); }); }
+  // Botón que abre el selector de temas; `fallback` es el tema que preparó el admin.
   function themeSwitch(fallback) {
-    const cur = getTheme() || fallback || 'system';
-    const b = (v, ic, t) => `<button type="button" data-v="${v}" title="${t}" aria-label="Tema ${t}" class="${cur === v ? 'on' : ''}">${icon(ic)}</button>`;
-    return `<div class="seg" data-theme-seg>${b('light', 'sun', 'claro')}${b('system', 'monitor', 'del sistema')}${b('dark', 'moon', 'oscuro')}</div>`;
+    if (fallback && !themeFallback) themeFallback = fallback;
+    return `<button type="button" class="btn sm theme-btn" data-theme-open title="Cambiar tema" aria-label="Cambiar tema">${themeBtnInner()}</button>`;
   }
-  document.addEventListener('click', (e) => { const btn = e.target.closest('[data-theme-seg] button'); if (btn) setTheme(btn.dataset.v); });
-  applyTheme(getTheme());
+  function themeCard(t, on) {
+    const prev = (c) => `<span class="tp" style="background:${c.bg};border-color:${c.border}">
+        <span class="tp-side" style="background:${c.subtle};border-color:${c.border}"><i style="background:${c.faint}"></i><i style="background:${c.faint}"></i></span>
+        <span class="tp-main" style="background:${c.panel}">
+          <i style="background:${c.k};width:30%"></i><i style="background:${c.d};width:55%;margin-left:12%"></i><i style="background:${c.s};width:40%;margin-left:12%"></i><i style="background:${c.n};width:22%"></i>
+          <b style="background:${c.primary}"></b></span></span>`;
+    const body = t.id === 'system'
+      ? `<span class="tp-split">${prev(TH.byId('light').c)}${prev(TH.byId('dark').c)}</span>`
+      : prev(t.c);
+    return `<button type="button" class="theme-card ${on ? 'on' : ''}" data-theme-pick="${t.id}">${body}<span class="tc-name">${esc(t.name)}${on ? icon('check') : ''}</span></button>`;
+  }
+  function openThemePicker() {
+    const render = () => {
+      const cur = themeId();
+      const grid = (list) => `<div class="theme-grid">${list.map((t) => themeCard(t, t.id === cur)).join('')}</div>`;
+      const size = TH.size();
+      return `<div class="picker">
+        <div class="section-title" style="margin-top:0">Automático</div>${grid([SYSTEM])}
+        <div class="section-title">Claros</div>${grid(TH.list.filter((t) => !t.dark))}
+        <div class="section-title">Oscuros</div>${grid(TH.list.filter((t) => t.dark))}
+        <div class="section-title">Tamaño del código</div>
+        <div class="seg">${[12, 13.5, 15, 17].map((px, i) => `<button type="button" data-size="${px}" class="${size === px ? 'on' : ''}">${['Chico', 'Normal', 'Grande', 'Muy grande'][i]}</button>`).join('')}</div>
+      </div>`;
+    };
+    const m = modal({ title: 'Tema', body: render() });
+    m.el.querySelector('.modal').style.maxWidth = '780px';
+    const wire = () => {
+      $$('[data-theme-pick]', m.el).forEach((b) => b.onclick = () => { setTheme(b.dataset.themePick); m.el.querySelector('.modal-b').innerHTML = render(); wire(); });
+      $$('[data-size]', m.el).forEach((b) => b.onclick = () => { TH.setSize(Number(b.dataset.size)); m.el.querySelector('.modal-b').innerHTML = render(); wire(); });
+    };
+    wire();
+  }
+  document.addEventListener('click', (e) => { if (e.target.closest('[data-theme-open]')) openThemePicker(); });
+  // Lista de temas para formularios (p. ej. el tema inicial del candidato).
+  function themeOptions(selected) {
+    const o = (t) => `<option value="${t.id}" ${t.id === selected ? 'selected' : ''}>${esc(t.name)}</option>`;
+    return `<optgroup label="Automático">${o(SYSTEM)}</optgroup><optgroup label="Claros">${TH.list.filter((t) => !t.dark).map(o).join('')}</optgroup><optgroup label="Oscuros">${TH.list.filter((t) => t.dark).map(o).join('')}</optgroup>`;
+  }
 
   // ---------- zonas horarias ----------
   const localTz = () => Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
@@ -166,5 +211,5 @@ window.UI = (function () {
   const hhmm = (t) => new Date(t).toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
 
   return { $, $$, esc, md, json, LANG, signature, renderResults, toast, fmtTime, fmtCountdown, ago, hhmm, icon, LOGO,
-    themeSwitch, setTheme, getTheme, applyTheme, localTz, zonedToUtc, utcToZonedInput, tzLabel, tzShort, fmtIn, tzOptions, modal, confirmBox };
+    themeSwitch, setTheme, getTheme, applyTheme, themeOptions, themeLabel, swatch, onThemeChange: TH.onChange, localTz, zonedToUtc, utcToZonedInput, tzLabel, tzShort, fmtIn, tzOptions, modal, confirmBox };
 })();
