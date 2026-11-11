@@ -369,3 +369,6 @@ pre.console.err { color: var(--red); }
 .tp-main i { display: block; height: 4px; border-radius: 2px; }
 .tp-main b { position: absolute; right: 7px; bottom: 7px; width: 22px; height: 9px; border-radius: 3px; }
 .cm-s-default .cm-comment { color: var(--syn-comment, var(--faint)); }
+
+/* contador de avisos */
+.badge { margin-left: auto; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px; background: var(--brand); color: #fff; font: 600 11px/18px var(--sans); text-align: center; }

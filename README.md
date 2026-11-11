@@ -23,6 +23,13 @@ de administrador al que solo tú tienes acceso.
 - **Zonas horarias**: programas la hora en la zona que elijas (la tuya o la del candidato); el candidato la ve convertida
   a su hora local con cuenta regresiva.
 - **Bloquear / desbloquear** cualquier link que aún no se usa, aunque ya lo hayas mandado, y cambiar su fecha.
+- **Fin del tiempo**: al llegar a 00:00 se envía solo y el candidato ya no puede editar. El servidor rechaza cualquier
+  código que llegue después del límite (+30 s de margen) y conserva lo último guardado a tiempo. Si el candidato cerró
+  la pestaña, el servidor lo marca solo como "Tiempo agotado".
+- **Reabrir / agregar tiempo**: reabres una evaluación terminada con los minutos que elijas (su página se reactiva sola)
+  o das tiempo extra a quien sigue en curso (lo ve al momento en su cronómetro).
+- **Avisos**: cuando a alguien se le acaba el tiempo o envía su evaluación te llega un aviso en el panel (con sonido),
+  una notificación del navegador si la activas y, opcionalmente, un correo (`ADMIN_EMAIL` + `RESEND_API_KEY`).
 - **Señales de integridad**: número de pegados (paste), cambios de pestaña, ejecuciones y una línea de tiempo.
 - **Tiempo real** vía Server-Sent Events (sin websockets ni buses de mensajes): ves el código ~0.5 s después
   de cada tecla, un indicador de "escribiendo…" y puedes seguir automáticamente el ejercicio que tiene abierto.
@@ -63,6 +70,7 @@ Variables de entorno:
 | `PORT` | Puerto HTTP (por defecto 3000). |
 | `RESEND_API_KEY` | Opcional. API key de [Resend](https://resend.com) para enviar correos desde Alcor. |
 | `MAIL_FROM` | Opcional. Remitente, p. ej. `Alcor <evaluaciones@tudominio.com>` (dominio verificado en Resend). |
+| `ADMIN_EMAIL` | Opcional. Tu correo para recibir avisos (requiere `RESEND_API_KEY`). |
 
 ## Agregar retos
 

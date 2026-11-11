@@ -134,6 +134,10 @@ function getCandidate(token) {
 }
 // Un link preparado queda bloqueado hasta que el admin lo activa o llega su hora programada.
 const isOpen = (c) => !c.locked || !!c.activatedAt || (!!c.opensAt && Date.now() >= c.opensAt);
+// Hora límite: inicio + duración, o la que fijó el admin al reabrir / dar tiempo extra.
+const GRACE_MS = 30000; // margen por latencia de red
+const deadlineOf = (c) => (c.deadlineAt ? c.deadlineAt : c.startedAt ? c.startedAt + c.minutes * 60000 : null);
+const isLate = (c, now = Date.now()) => { const d = deadlineOf(c); return !!d && now > d + GRACE_MS; };
 const summary = (c) => ({ ...c, timeline: undefined, code: undefined, versions: undefined, events: c.timeline.length, open: isOpen(c),
   versionCount: Object.values(c.versions || {}).reduce((n, v) => n + v.length, 0) });
 
@@ -196,6 +200,37 @@ function broadcast(cand) {
   streams.forEach((res) => res.write(msg));
 }
 setInterval(() => streams.forEach((res) => res.write(': ping\n\n')), 25000);
+
+// ---------- avisos para el admin ----------
+// Se guardan (los últimos 200), se envían en vivo por SSE y, si hay Resend + ADMIN_EMAIL, también por correo.
+const ADMIN_EMAIL = process.env.ADMIN_EMAIL || '';
+function notify(kind, cand, text) {
+  db.notices = db.notices || [];
+  const n = { id: crypto.randomBytes(5).toString('hex'), t: Date.now(), kind, candidate: cand.id, name: cand.name, text };
+  db.notices.push(n);
+  if (db.notices.length > 200) db.notices = db.notices.slice(-200);
+  streams.forEach((res) => res.write(`data: ${JSON.stringify({ type: 'notice', notice: n })}\n\n`));
+  if (RESEND_API_KEY && validEmail(ADMIN_EMAIL)) {
+    fetch('https://api.resend.com/emails', {
+      method: 'POST', headers: { Authorization: `Bearer ${RESEND_API_KEY}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ from: MAIL_FROM, to: [ADMIN_EMAIL], subject: `Alcor · ${text}`, text: `${text}.\n\nRevisa sus resultados en el panel de Alcor.` }),
+    }).catch((e) => console.error('[alcor] aviso por correo', e));
+  }
+}
+// Termina la evaluación por tiempo. Conserva el último código guardado a tiempo.
+function expire(cand, why) {
+  if (cand.status !== 'in_progress') return;
+  const d = deadlineOf(cand);
+  cand.status = 'expired';
+  cand.submittedAt = d && d < Date.now() ? d : Date.now();
+  cand.timeline.push({ t: Date.now(), type: 'expired', detail: why });
+  notify('expired', cand, `A ${cand.name} se le acabó el tiempo`);
+  save(); broadcast(cand);
+}
+// Revisión periódica: marca como "Tiempo agotado" a quien cerró la pestaña y ya se pasó del límite.
+setInterval(() => {
+  for (const c of Object.values(db.candidates)) if (c.status === 'in_progress' && isLate(c)) expire(c, 'el navegador estaba cerrado');
+}, 10000);
 
 // ---------- rate limit simple para el login ----------
 const attempts = new Map();
@@ -317,6 +352,7 @@ async function handle(req, res) {
         if (validEmail(rec.email)) cand.email = rec.email;
         if (typeof rec.locked === 'boolean') cand.locked = rec.locked;
         if (rec.opensAt !== undefined) cand.opensAt = Number(rec.opensAt) || null;
+        if (Number(rec.deadlineAt)) cand.deadlineAt = Number(rec.deadlineAt);
         if (cand.status !== 'pending') cand.timeline.push({ t: Date.now(), type: 'restored', detail: 'recuperado del respaldo del admin' });
         restored++; broadcast(cand);
       }
@@ -361,6 +397,27 @@ async function handle(req, res) {
       save(); broadcast(c);
       return send(res, 200, { sent: true, to: c.email });
     }
+    // Reabrir una evaluación terminada o dar tiempo extra a una en curso.
+    const mTime = p.match(/^\/api\/admin\/candidates\/([\w-]+)\/time$/);
+    if (mTime && m === 'POST') {
+      const c = db.candidates[mTime[1]];
+      if (!c) return send(res, 404, { error: 'No existe' });
+      const body = await readBody(req).catch(() => ({}));
+      const mins = Math.min(Math.max(parseInt(body.minutes, 10) || 0, 1), 240);
+      if (!mins) return send(res, 400, { error: 'Indica los minutos.' });
+      const now = Date.now();
+      if (c.status === 'in_progress') {
+        c.deadlineAt = Math.max(deadlineOf(c), now) + mins * 60000;
+        c.timeline.push({ t: now, type: 'time_added', detail: `+${mins} min` });
+      } else if (c.status === 'submitted' || c.status === 'expired') {
+        c.status = 'in_progress'; c.submittedAt = null; c.deadlineAt = now + mins * 60000;
+        c.reopens = (c.reopens || 0) + 1;
+        c.timeline.push({ t: now, type: 'reopened', detail: `${mins} min` });
+      } else return send(res, 409, { error: 'El candidato aún no empieza.' });
+      save(); broadcast(c);
+      return send(res, 200, summary(c));
+    }
+    if (p === '/api/admin/notices' && m === 'GET') return send(res, 200, (db.notices || []).slice(-100).reverse());
     const mAct = p.match(/^\/api\/admin\/candidates\/([\w-]+)\/(activate|deactivate)$/);
     if (mAct && m === 'POST') {
       const c = db.candidates[mAct[1]];
@@ -407,7 +464,8 @@ async function handle(req, res) {
     const cand = getCandidate(mc[1]);
     if (!cand) return send(res, 404, { error: 'Link inválido.' });
     const now = Date.now();
-    const deadline = () => (cand.startedAt ? cand.startedAt + cand.minutes * 60000 : null);
+    if (cand.status === 'in_progress' && isLate(cand, now)) expire(cand, 'volvió después del límite');
+    const deadline = () => deadlineOf(cand);
     const view = () => ({
       id: cand.id, name: cand.name, lang: cand.lang, minutes: cand.minutes, status: cand.status,
       startedAt: cand.startedAt, deadline: deadline(), serverNow: Date.now(), code: cand.code,
@@ -450,6 +508,8 @@ async function handle(req, res) {
 
     if (mc[2] === 'sync' && m === 'POST') {
       if (cand.status !== 'in_progress') return send(res, 409, { error: 'La evaluación no está activa.', status: cand.status });
+      // Fuera de tiempo: no se acepta nada nuevo; se conserva lo último guardado a tiempo.
+      if (isLate(cand, now)) { expire(cand, 'llegó tarde un guardado'); return send(res, 409, { error: 'Se terminó el tiempo.', status: cand.status }); }
       const body = await readBody(req).catch(() => null);
       if (!body) return send(res, 400, { error: 'Bad request' });
       const before = JSON.stringify(cand.code);
@@ -473,20 +533,24 @@ async function handle(req, res) {
           passed: ev.results ? ev.results.passed : undefined, total: ev.results ? ev.results.total : undefined });
       }
       if (cand.timeline.length > 2000) cand.timeline = cand.timeline.slice(-2000);
-      const d = deadline();
-      if (d && now > d + 30000) { cand.status = 'expired'; cand.submittedAt = now; cand.timeline.push({ t: now, type: 'expired' }); }
       save(); broadcast(cand);
-      return send(res, 200, { ok: true, status: cand.status, savedAt: now });
+      return send(res, 200, { ok: true, status: cand.status, savedAt: now, deadline: deadline(), serverNow: now });
     }
 
     if (mc[2] === 'submit' && m === 'POST') {
       if (cand.status !== 'in_progress') return send(res, 409, { error: 'La evaluación ya terminó.', status: cand.status });
       const body = await readBody(req).catch(() => ({}));
-      mergeCode(cand, body.code);
+      // Fuera de tiempo: se ignora el código que llega y se queda lo último guardado a tiempo.
+      if (isLate(cand, now)) { expire(cand, 'envío fuera de tiempo'); return send(res, 200, view()); }
       const d = deadline();
-      cand.status = body.auto || (d && now > d + 30000) ? 'expired' : 'submitted';
-      cand.submittedAt = now; cand.lastSeen = now;
-      cand.timeline.push({ t: now, type: cand.status === 'expired' ? 'expired' : 'submit' });
+      // Envío automático del navegador, pero el admin le dio más tiempo: sigue en curso.
+      if (body.auto && d && now < d - 2000) return send(res, 200, view());
+      mergeCode(cand, body.code);
+      cand.lastSeen = now;
+      if (body.auto) { expire(cand); return send(res, 200, view()); }
+      cand.status = 'submitted'; cand.submittedAt = now;
+      cand.timeline.push({ t: now, type: 'submit' });
+      notify('submitted', cand, `${cand.name} envió su evaluación`);
       save(); broadcast(cand);
       return send(res, 200, view());
     }

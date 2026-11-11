@@ -77,7 +77,20 @@
     if (S.status === 'in_progress') return workspace();
     finished = true;
     message(S.status === 'expired' ? 'Se terminó el tiempo' : 'Evaluación enviada',
-      `Gracias, ${S.name}. Tu solución quedó registrada y el evaluador ya puede revisarla. Puedes cerrar esta pestaña.`);
+      `Gracias, ${S.name}. Tu solución quedó registrada y el evaluador ya puede revisarla. Si el evaluador te da más tiempo, esta página se reabrirá sola.`);
+    watchReopen();
+  }
+  // Si el evaluador reabre la evaluación, la página vuelve al editor automáticamente.
+  let reopenTimer = null;
+  function watchReopen() {
+    clearInterval(reopenTimer);
+    reopenTimer = setInterval(async () => {
+      try {
+        const r = await fetch(api()); if (!r.ok) return;
+        const d = await r.json();
+        if (d.status === 'in_progress') { clearInterval(reopenTimer); location.reload(); }
+      } catch { /* sin red: reintenta */ }
+    }, 5000);
   }
 
   // ---------- link preparado: pantalla de espera ----------
@@ -306,6 +319,11 @@
       const d = await r.json();
       if (d.status && d.status !== 'in_progress') { finished = true; S.status = d.status; writeLocal(); return route(); }
       if (!r.ok) throw new Error(d.error);
+      if (d.deadline && d.deadline !== S.deadline) { // el evaluador te dio más tiempo
+        if (d.deadline > S.deadline) toast('El evaluador te dio más tiempo');
+        S.deadline = d.deadline;
+      }
+      if (d.serverNow) clockOffset = d.serverNow - Date.now();
       lastSaved = Date.now();
       setSave(dirty ? 'saving' : 'saved');
     } catch {
@@ -363,10 +381,14 @@
     let d = {};
     for (let i = 0; i < 4; i++) { // reintentos por si falla la red
       try {
-        if (pending.length) await fetch(api('/sync'), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ code: currentCode(), events: pending }) });
+        if (pending.length) { await fetch(api('/sync'), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ code: currentCode(), events: pending }) }); pending = []; }
         const r = await fetch(api('/submit'), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body });
         d = await r.json(); break;
       } catch { await new Promise((ok) => setTimeout(ok, 1500 * (i + 1))); }
+    }
+    if (d.status === 'in_progress' && d.deadline) { // el evaluador amplió el tiempo justo a tiempo: seguimos
+      finished = false; S.deadline = d.deadline; clockOffset = d.serverNow - Date.now();
+      toast('El evaluador te dio más tiempo'); return;
     }
     S.status = d.status || (auto ? 'expired' : 'submitted');
     S.submittedAt = Date.now();

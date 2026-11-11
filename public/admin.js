@@ -20,6 +20,7 @@
   $('#nav-cands').innerHTML = `${icon('users')} Candidatos <span class="count" id="count-cands"></span>`;
   $('#nav-new').innerHTML = `${icon('plus')} Nuevo candidato`;
   $('#nav-catalog').innerHTML = `${icon('book')} Catálogo <span class="count" id="count-cat"></span>`;
+  $('#nav-notices').innerHTML = `${icon('bell')} Avisos <span class="badge hidden" id="count-notices"></span>`;
   $('#btn-export').innerHTML = `${icon('download')} Exportar`;
   $('#btn-logout').innerHTML = `${icon('logout')} Salir`;
   $('#btn-new-top').innerHTML = `${icon('plus')} Nuevo`;
@@ -36,6 +37,7 @@
   const idsOf = (c) => c.challengeIds || (c.challengeId ? [c.challengeId] : []);
   const shortDate = (t, tz) => new Intl.DateTimeFormat('es-MX', { timeZone: tz || localTz(), weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }).format(t);
   const isTyping = (c) => c.status === 'in_progress' && c.typingAt && Date.now() - c.typingAt < 3000;
+  const deadlineOf = (c) => c.deadlineAt || (c.startedAt ? c.startedAt + c.minutes * 60000 : 0);
 
   // ---------- respaldo local del admin ----------
   const cache = (() => { try { return JSON.parse(localStorage.getItem(CACHE_KEY)) || {}; } catch { return {}; } })();
@@ -105,6 +107,7 @@
     list.forEach((c) => { cands.set(c.id, c); remember(c); });
     renderList();
     renderEmptyDetail();
+    loadNotices();
     connectStream();
     setInterval(() => { renderList(); if (selected) { renderStats(); renderHeadState(); } }, 1000);
   }
@@ -319,7 +322,7 @@
       const label = ids.length === 1 ? (chById(ids[0]) || {}).title : `${ids.length} ejercicios`;
       const extra = isTyping(c) ? '<span class="typing">escribiendo</span>'
         : isLocked(c) && c.opensAt ? `<span>abre ${esc(shortDate(c.opensAt))}</span>`
-        : c.status === 'in_progress' && c.startedAt ? `<span class="mono">${fmtTime(c.startedAt + c.minutes * 60000 - Date.now())}</span>`
+        : c.status === 'in_progress' && c.startedAt ? `<span class="mono">${fmtTime(deadlineOf(c) - Date.now())}</span>`
         : total ? `<span class="mono">${passed}/${total}</span>` : `<span>${ago(c.createdAt)}</span>`;
       return `<div class="row ${c.id === selected ? 'on' : ''}" data-id="${c.id}">
         <div class="l1"><span class="name">${esc(c.name)}</span>${statusHtml(c)}</div>
@@ -405,6 +408,8 @@
       pending && locked ? `<button class="btn sm primary" data-a="unlock">${icon('unlock')} Activar ahora</button>` : '',
       pending && !locked ? `<button class="btn sm" data-a="lock">${icon('lock')} Bloquear</button>` : '',
       pending ? `<button class="btn sm" data-a="schedule">${icon('calendar')} ${c.opensAt && locked ? 'Cambiar fecha' : 'Programar'}</button>` : '',
+      ['submitted', 'expired'].includes(c.status) ? `<button class="btn sm primary" data-a="time">${icon('rotate')} Reabrir</button>` : '',
+      c.status === 'in_progress' ? `<button class="btn sm" data-a="time">${icon('clock')} Agregar tiempo</button>` : '',
       `<button class="btn sm" data-a="email">${icon('mail')} Enviar correo</button>`,
       `<button class="btn sm" data-a="copy">${icon('copy')} Copiar link</button>`,
       '<div class="spacer"></div>',
@@ -414,6 +419,8 @@
     if (locked && c.opensAt) notice = `${icon('calendar')}<span>Se abre el <b style="font-weight:500">${esc(fmtIn(c.opensAt, c.tz))}</b> (${esc(tzLabel(c.tz))})${c.tz !== localTz() ? ` · ${esc(shortDate(c.opensAt))} en tu hora` : ''}</span><span class="spacer"></span><span class="faint mono">en ${fmtCountdown(c.opensAt - Date.now())}</span>`;
     else if (locked) notice = `${icon('lock')}<span>Link bloqueado: si el candidato lo abre verá “aún no inicia tu prueba”.</span>`;
     else if (pending) notice = `${icon('unlock')}<span>Link activo: el candidato puede empezar cuando lo abra.</span>`;
+    else if (c.status === 'expired') notice = `${icon('clock')}<span>Se le acabó el tiempo. Se conservó lo último que guardó a tiempo. Puedes reabrir la evaluación para darle más minutos.</span>`;
+    else if (c.status === 'submitted') notice = `${icon('check')}<span>Envió su evaluación${c.submittedAt ? ` a las ${hhmm(c.submittedAt)}` : ''}. Puedes reabrirla si necesitas que continúe.</span>`;
     const key = acts + notice;
     if ($('#d-actions').dataset.key === key) return;
     $('#d-actions').dataset.key = key;
@@ -428,6 +435,7 @@
       if (a === 'unlock') { await api(`/api/admin/candidates/${c.id}/activate`, { method: 'POST' }); toast('Link activado'); }
       if (a === 'lock') { await api(`/api/admin/candidates/${c.id}/deactivate`, { method: 'POST' }); toast('Link bloqueado'); }
       if (a === 'schedule') scheduleModal(c);
+      if (a === 'time') timeModal(c);
       if (a === 'email') emailModal(c.id);
       if (a === 'copy') { await navigator.clipboard.writeText(linkOf(c)); toast('Link copiado'); }
       if (a === 'revoke') {
@@ -435,6 +443,36 @@
         await api('/api/admin/candidates/' + c.id, { method: 'DELETE' });
       }
     } catch (e) { fail(e); }
+  }
+
+  // Reabrir (terminada) o agregar tiempo (en curso)
+  function timeModal(c) {
+    const reopen = c.status !== 'in_progress';
+    let mins = 10;
+    const m = modal({ title: reopen ? `Reabrir evaluación de ${esc(c.name)}` : `Agregar tiempo a ${esc(c.name)}`, size: 'sm', body: `<div style="padding:16px 18px">
+        <p class="muted" style="margin:0 0 14px;line-height:1.6">${reopen
+          ? 'El candidato podrá seguir editando su código desde donde se quedó. Si tiene la página abierta, se reactiva sola.'
+          : 'Se suma a su tiempo restante. El candidato lo ve al momento en su cronómetro.'}</p>
+        <span class="label">Minutos ${reopen ? 'disponibles' : 'extra'}</span>
+        <div class="seg full" id="t-quick">${[5, 10, 15, 30].map((n) => `<button type="button" data-n="${n}" class="${n === mins ? 'on' : ''}">${n} min</button>`).join('')}</div>
+        <input id="t-min" type="number" min="1" max="240" value="${mins}" style="margin-top:10px">
+        <div class="hint" id="t-prev"></div></div>`,
+      footer: `<div class="spacer"></div><button class="btn" data-no>Cancelar</button><button class="btn primary" id="t-ok">${icon(reopen ? 'rotate' : 'clock')} ${reopen ? 'Reabrir' : 'Agregar'}</button>` });
+    const prev = () => {
+      mins = Math.max(1, Math.min(240, parseInt($('#t-min').value, 10) || 0));
+      const base = reopen ? Date.now() : Math.max(deadlineOf(c), Date.now());
+      $('#t-prev').textContent = `Terminará a las ${hhmm(base + mins * 60000)} (tu hora).`;
+      $$('#t-quick button').forEach((b) => b.classList.toggle('on', Number(b.dataset.n) === mins));
+    };
+    $$('#t-quick button').forEach((b) => b.onclick = () => { $('#t-min').value = b.dataset.n; prev(); });
+    $('#t-min').oninput = prev; prev();
+    m.el.querySelector('[data-no]').onclick = m.close;
+    $('#t-ok').onclick = async () => {
+      try {
+        await api(`/api/admin/candidates/${c.id}/time`, { method: 'POST', body: JSON.stringify({ minutes: mins }) });
+        m.close(); toast(reopen ? `Evaluación reabierta por ${mins} min` : `+${mins} min para ${c.name}`);
+      } catch (e) { fail(e); }
+    };
   }
 
   function scheduleModal(c) {
@@ -558,7 +596,7 @@
     const ids = idsOf(c), res = c.results || {};
     const passed = ids.reduce((s, id) => s + (res[id] ? res[id].passed : 0), 0);
     const total = ids.reduce((s, id) => s + (res[id] ? res[id].total : 0), 0);
-    const left = c.startedAt && c.status === 'in_progress' ? c.startedAt + c.minutes * 60000 - Date.now() : null;
+    const left = c.startedAt && c.status === 'in_progress' ? deadlineOf(c) - Date.now() : null;
     const stat = (k, v) => `<div><div class="k">${k}</div><div class="v">${v}</div></div>`;
     $('#d-stats').innerHTML =
       stat('Tests del candidato', total ? `${passed}/${total}` : '—') +
@@ -570,7 +608,56 @@
 
   const EV = { activated: 'Link activado', deactivated: 'Link bloqueado', scheduled: 'Activación programada', emailed: 'Correo enviado', start: 'Inició la evaluación',
     run: 'Corrió tests', paste: 'Pegó texto', blur: 'Salió de la pestaña', focus: 'Regresó a la pestaña', submit: 'Envió su solución', expired: 'Se agotó el tiempo',
-    reset: 'Reinició el código', restored: 'Sesión recuperada', version: 'Guardó versión', restore: 'Restauró versión' };
+    reset: 'Reinició el código', restored: 'Sesión recuperada', version: 'Guardó versión', restore: 'Restauró versión',
+    reopened: 'Reabriste la evaluación', time_added: 'Le diste tiempo extra' };
+
+  // =====================================================================
+  // Avisos (se acabó el tiempo / envió su evaluación)
+  // =====================================================================
+  const SEEN_KEY = 'alcor:notices-seen';
+  let notices = [];
+  const seenAt = () => { try { return Number(localStorage.getItem(SEEN_KEY)) || 0; } catch { return 0; } };
+  function renderBadge() {
+    const n = notices.filter((x) => x.t > seenAt()).length;
+    const b = $('#count-notices');
+    b.textContent = n > 9 ? '9+' : n; b.classList.toggle('hidden', !n);
+  }
+  async function loadNotices() { try { notices = await api('/api/admin/notices'); renderBadge(); } catch { /* */ } }
+  function beep() {
+    try {
+      const ac = new (window.AudioContext || window.webkitAudioContext)();
+      [0, 0.16].forEach((at, i) => {
+        const o = ac.createOscillator(), g = ac.createGain();
+        o.frequency.value = i ? 880 : 660; o.type = 'sine';
+        g.gain.setValueAtTime(0.0001, ac.currentTime + at);
+        g.gain.exponentialRampToValueAtTime(0.12, ac.currentTime + at + 0.02);
+        g.gain.exponentialRampToValueAtTime(0.0001, ac.currentTime + at + 0.14);
+        o.connect(g).connect(ac.destination); o.start(ac.currentTime + at); o.stop(ac.currentTime + at + 0.16);
+      });
+    } catch { /* sin audio */ }
+  }
+  function onNotice(n) {
+    notices.unshift(n); renderBadge();
+    toast(n.text); beep();
+    if ('Notification' in window && Notification.permission === 'granted') {
+      try {
+        const nt = new Notification('Alcor', { body: n.text, icon: '/favicon.svg', tag: n.id });
+        nt.onclick = () => { window.focus(); go('cands'); select(n.candidate); nt.close(); };
+      } catch { /* */ }
+    }
+  }
+  $('#nav-notices').onclick = () => {
+    const perm = 'Notification' in window ? Notification.permission : 'unsupported';
+    const item = (n) => `<button class="vitem" data-c="${n.candidate}" style="padding:10px 12px">${icon(n.kind === 'expired' ? 'clock' : 'check')}<span class="lab" style="white-space:normal">${esc(n.text)}${n.t > seenAt() ? ' <span class="tag" style="margin-left:4px">nuevo</span>' : ''}</span><span class="when">${new Date(n.t).toLocaleString('es-MX', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' })}</span></button>`;
+    const m = modal({ title: 'Avisos', size: 'sm', body: `<div style="padding:8px">
+        ${perm === 'default' ? `<div class="notice" style="border:1px solid var(--border);border-radius:8px;margin:4px 4px 10px">${icon('bell').replace('<svg', '<svg style="width:15px;height:15px;color:var(--muted)"')}<span style="flex:1">Recibe una notificación del sistema aunque tengas otra pestaña abierta.</span><button class="btn sm primary" id="n-perm">Activar</button></div>` : ''}
+        ${perm === 'denied' ? '<div class="hint" style="margin:4px 8px 10px">Las notificaciones del navegador están bloqueadas para este sitio; actívalas desde la configuración del navegador.</div>' : ''}
+        <div class="vlist">${notices.length ? notices.map(item).join('') : '<div class="empty">Aún no hay avisos. Aquí verás cuando a alguien se le acabe el tiempo o envíe su evaluación.</div>'}</div></div>` });
+    try { localStorage.setItem(SEEN_KEY, String(Date.now())); } catch { /* */ }
+    renderBadge();
+    $$('[data-c]', m.el).forEach((b) => b.onclick = () => { m.close(); if (cands.has(b.dataset.c)) { go('cands'); select(b.dataset.c); } else toast('Ese candidato ya no existe'); });
+    if ($('#n-perm')) $('#n-perm').onclick = async () => { const r = await Notification.requestPermission(); m.close(); toast(r === 'granted' ? 'Notificaciones activadas' : 'No se activaron las notificaciones'); };
+  };
   function renderTimeline() {
     const c = detailCache; if (!c || !$('#d-timeline')) return;
     const items = (c.timeline || []).slice(-200).reverse();
@@ -587,6 +674,7 @@
     es.onerror = () => { st.className = 'status warn'; st.textContent = 'Reconectando…'; };
     es.onmessage = async (e) => {
       const msg = JSON.parse(e.data);
+      if (msg.type === 'notice') return onNotice(msg.notice);
       if (msg.type === 'deleted') {
         cands.delete(msg.id); forget(msg.id);
         if (selected === msg.id) { selected = null; detailCache = null; renderEmptyDetail(); }
