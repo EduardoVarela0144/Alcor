@@ -8,6 +8,7 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const CHALLENGES = require('./challenges');
+const I18N = require('./public/i18n.js');
 
 const PORT = process.env.PORT || 3000;
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || '';
@@ -22,6 +23,10 @@ const MAX_EXERCISES = 6;
 const MAX_CODE = 100000;
 const MAX_VERSIONS = 30;
 const THEMES = require('./public/themes.js').IDS; // 'system' + todos los temas disponibles
+const UI_LANGS = I18N.LANGS; // idiomas de la interfaz: es, en
+// Idioma de la petición (el navegador lo manda en el header X-Lang)
+const reqLang = (req) => (UI_LANGS.includes(req.headers['x-lang']) ? req.headers['x-lang'] : 'es');
+const E = (req, key, vars) => I18N.t(reqLang(req), key, vars);
 // Correo opcional vía Resend (https://resend.com). Sin estas variables, el admin usa su propio cliente de correo (mailto).
 const RESEND_API_KEY = process.env.RESEND_API_KEY || '';
 const MAIL_FROM = process.env.MAIL_FROM || 'Alcor <onboarding@resend.dev>';
@@ -101,6 +106,7 @@ function readBody(req, limit = 2 * 1024 * 1024) {
 }
 const challengeById = (id) => CHALLENGES.find((c) => c.id === id);
 const publicChallenge = (c, lang) => ({
+  en: c.en,
   id: c.id, title: c.title, difficulty: c.difficulty, topic: c.topic, description: c.description,
   fn: c.fn[lang], starter: c.starter[lang],
   tests: c.tests.filter((t) => !t.hidden).map(({ args, expected }) => ({ args, expected })),
@@ -126,6 +132,7 @@ function getCandidate(token) {
       code: {}, lastSeen: null, typingAt: null, results: {}, runs: 0, pastes: 0, blurs: 0, timeline: [],
       locked: !!p.locked, opensAt: Number(p.opensAt) || null, activatedAt: null,
       tz: validTz(p.tz) ? p.tz : 'UTC', theme: THEMES.includes(p.theme) ? p.theme : 'system', email: null, versions: {},
+      ui: UI_LANGS.includes(p.ui) ? p.ui : 'es',
       rebuilt: true, // creado desde el token: puede recuperarse con el respaldo del navegador
     };
     save();
@@ -161,34 +168,39 @@ function mergeVersions(cand, versions) {
 }
 
 // ---------- correo ----------
-function fmtDate(t, tz) {
-  return new Intl.DateTimeFormat('es-MX', { timeZone: tz, weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit', timeZoneName: 'short' }).format(t);
+function fmtDate(t, tz, ui = 'es') {
+  return new Intl.DateTimeFormat(I18N.LOCALE[ui], { timeZone: tz, weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit', timeZoneName: 'short' }).format(t);
 }
+// Correo con el link, en el idioma del candidato.
 function emailFor(cand, link) {
-  const ex = cand.challengeIds.length === 1 ? `el ejercicio "${challengeById(cand.challengeIds[0]).title}"` : `${cand.challengeIds.length} ejercicios`;
+  const ui = cand.ui || 'es';
+  const t = (k, v) => I18N.t(ui, k, v);
+  const first = challengeById(cand.challengeIds[0]);
+  const ex = cand.challengeIds.length === 1 ? t('m.one_ex', { t: ui === 'en' && first.en ? first.en.title : first.title }) : t('m.n_ex', { n: cand.challengeIds.length });
   const lang = cand.lang === 'python' ? 'Python' : 'JavaScript';
   const when = cand.opensAt && !cand.activatedAt
-    ? `La evaluación se abrirá el ${fmtDate(cand.opensAt, cand.tz)} (equivale a ${fmtDate(cand.opensAt, 'UTC')}). Al abrir el link verás la hora convertida a tu zona horaria.`
-    : isOpen(cand) ? 'Ya puedes entrar cuando quieras.' : 'Te avisaremos cuando la evaluación esté activa; si abres el link antes verás una pantalla de espera.';
-  const subject = `Tu evaluación técnica${cand.opensAt ? ' · ' + new Intl.DateTimeFormat('es-MX', { timeZone: cand.tz, day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }).format(cand.opensAt) : ''}`;
+    ? t('m.when_sched', { date: fmtDate(cand.opensAt, cand.tz, ui), utc: fmtDate(cand.opensAt, 'UTC', ui) })
+    : isOpen(cand) ? t('m.when_open') : t('m.when_locked');
+  const subject = t('m.subject') + (cand.opensAt ? ' · ' + new Intl.DateTimeFormat(I18N.LOCALE[ui], { timeZone: cand.tz, day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }).format(cand.opensAt) : '');
+  const intro = t('m.intro', { ex, lang, m: cand.minutes });
   const text = [
-    `Hola ${cand.name},`, '',
-    `Te compartimos el link de acceso a tu evaluación técnica: ${ex} en ${lang}, con una duración de ${cand.minutes} minutos.`, '',
+    t('m.hello', { name: cand.name }), '',
+    intro, '',
     when, '', link, '',
-    'Indicaciones:',
-    '• El cronómetro empieza cuando presiones "Comenzar" y no se puede pausar.',
-    '• Tu código se guarda automáticamente; puedes guardar versiones y regresar a ellas.',
-    '• Usa una computadora con Chrome, Edge, Firefox o Safari actualizados.', '',
-    '¡Mucho éxito!',
+    t('m.rules'),
+    '• ' + t('m.r1'),
+    '• ' + t('m.r2'),
+    '• ' + t('m.r3'), '',
+    t('m.luck'),
   ].join('\n');
   const esc = (x) => String(x).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
   const html = `<div style="font-family:-apple-system,Segoe UI,Helvetica,Arial,sans-serif;color:#171717;max-width:520px;margin:0 auto;padding:24px;line-height:1.55;font-size:15px">
 <p style="font-weight:600;font-size:16px;margin:0 0 20px">✦ Alcor</p>
-<p>Hola ${esc(cand.name)},</p>
-<p>Te compartimos el link de acceso a tu evaluación técnica: ${esc(ex)} en ${lang}, con una duración de ${cand.minutes} minutos.</p>
+<p>${esc(t('m.hello', { name: cand.name }))}</p>
+<p>${esc(intro)}</p>
 <p>${esc(when)}</p>
-<p style="margin:24px 0"><a href="${esc(link)}" style="background:#171717;color:#fff;text-decoration:none;padding:10px 18px;border-radius:8px;display:inline-block;font-weight:500">Abrir evaluación</a></p>
-<p style="color:#6b6b6b;font-size:13px">El cronómetro empieza cuando presiones "Comenzar". Tu código se guarda automáticamente.<br>Si el botón no funciona, copia este link: ${esc(link)}</p>
+<p style="margin:24px 0"><a href="${esc(link)}" style="background:#171717;color:#fff;text-decoration:none;padding:10px 18px;border-radius:8px;display:inline-block;font-weight:500">${esc(t('m.open'))}</a></p>
+<p style="color:#6b6b6b;font-size:13px">${esc(t('m.footer'))}<br>${esc(t('m.fallback', { link }))}</p>
 </div>`;
   return { subject, text, html };
 }
@@ -204,7 +216,8 @@ setInterval(() => streams.forEach((res) => res.write(': ping\n\n')), 25000);
 // ---------- avisos para el admin ----------
 // Se guardan (los últimos 200), se envían en vivo por SSE y, si hay Resend + ADMIN_EMAIL, también por correo.
 const ADMIN_EMAIL = process.env.ADMIN_EMAIL || '';
-function notify(kind, cand, text) {
+function notify(kind, cand) {
+  const text = I18N.t(db.adminLang || 'es', 'notice.' + kind, { name: cand.name });
   db.notices = db.notices || [];
   const n = { id: crypto.randomBytes(5).toString('hex'), t: Date.now(), kind, candidate: cand.id, name: cand.name, text };
   db.notices.push(n);
@@ -213,7 +226,7 @@ function notify(kind, cand, text) {
   if (RESEND_API_KEY && validEmail(ADMIN_EMAIL)) {
     fetch('https://api.resend.com/emails', {
       method: 'POST', headers: { Authorization: `Bearer ${RESEND_API_KEY}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ from: MAIL_FROM, to: [ADMIN_EMAIL], subject: `Alcor · ${text}`, text: `${text}.\n\nRevisa sus resultados en el panel de Alcor.` }),
+      body: JSON.stringify({ from: MAIL_FROM, to: [ADMIN_EMAIL], subject: `Alcor · ${text}`, text: I18N.t(db.adminLang || 'es', 'm.admin_body', { text }) }),
     }).catch((e) => console.error('[alcor] aviso por correo', e));
   }
 }
@@ -224,12 +237,12 @@ function expire(cand, why) {
   cand.status = 'expired';
   cand.submittedAt = d && d < Date.now() ? d : Date.now();
   cand.timeline.push({ t: Date.now(), type: 'expired', detail: why });
-  notify('expired', cand, `A ${cand.name} se le acabó el tiempo`);
+  notify('expired', cand);
   save(); broadcast(cand);
 }
 // Revisión periódica: marca como "Tiempo agotado" a quien cerró la pestaña y ya se pasó del límite.
 setInterval(() => {
-  for (const c of Object.values(db.candidates)) if (c.status === 'in_progress' && isLate(c)) expire(c, 'el navegador estaba cerrado');
+  for (const c of Object.values(db.candidates)) if (c.status === 'in_progress' && isLate(c)) expire(c, 'tab_closed');
 }, 10000);
 
 // ---------- rate limit simple para el login ----------
@@ -271,12 +284,12 @@ async function handle(req, res) {
   // ----- Admin -----
   if (p === '/api/admin/login' && m === 'POST') {
     const ip = (req.headers['x-forwarded-for'] || req.socket.remoteAddress || '').split(',')[0].trim();
-    if (!ADMIN_PASSWORD) return send(res, 503, { error: 'Define ADMIN_PASSWORD en el servidor.' });
-    if (tooMany(ip)) return send(res, 429, { error: 'Demasiados intentos. Espera 15 minutos.' });
+    if (!ADMIN_PASSWORD) return send(res, 503, { error: E(req, 's.no_admin') });
+    if (tooMany(ip)) return send(res, 429, { error: E(req, 's.too_many') });
     const body = await readBody(req).catch(() => ({}));
     if (!safeEqual(body.password || '', ADMIN_PASSWORD)) {
       attempts.get(ip).push(Date.now());
-      return send(res, 401, { error: 'Contraseña incorrecta.' });
+      return send(res, 401, { error: E(req, 's.bad_pw') });
     }
     const ts = String(Date.now());
     const cookie = `alcor_admin=${ts}.${sign('admin:' + ts)}; HttpOnly; Path=/; SameSite=Strict; Max-Age=${ADMIN_TTL_MS / 1000}${IS_PROD ? '; Secure' : ''}`;
@@ -286,7 +299,8 @@ async function handle(req, res) {
     return send(res, 200, { ok: true }, { 'Set-Cookie': 'alcor_admin=; HttpOnly; Path=/; Max-Age=0' });
   }
   if (p.startsWith('/api/admin/')) {
-    if (!isAdmin(req)) return send(res, 401, { error: 'No autorizado' });
+    if (!isAdmin(req)) return send(res, 401, { error: E(req, 's.unauth') });
+    db.adminLang = reqLang(req); // para escribir los avisos por correo en tu idioma
 
     if (p === '/api/admin/me' && m === 'GET') return send(res, 200, { ok: true, email: !!RESEND_API_KEY });
 
@@ -303,15 +317,16 @@ async function handle(req, res) {
       const ids = [...new Set(Array.isArray(body.challenges) ? body.challenges : [])].filter((id) => challengeById(id)).slice(0, MAX_EXERCISES);
       const defMinutes = ids.reduce((s, id) => s + challengeById(id).minutes, 0);
       const minutes = Math.min(Math.max(parseInt(body.minutes, 10) || defMinutes || 30, 5), 240);
-      if (!name || !lang || !ids.length) return send(res, 400, { error: 'Nombre, lenguaje y al menos un ejercicio son obligatorios.' });
+      if (!name || !lang || !ids.length) return send(res, 400, { error: E(req, 's.required') });
       const activation = ['now', 'manual', 'scheduled'].includes(body.activation) ? body.activation : 'now';
       const opensAt = activation === 'scheduled' ? Number(body.opensAt) : null;
-      if (activation === 'scheduled' && !(opensAt > Date.now())) return send(res, 400, { error: 'La fecha de activación debe ser en el futuro.' });
+      if (activation === 'scheduled' && !(opensAt > Date.now())) return send(res, 400, { error: E(req, 's.future') });
       const payload = { id: crypto.randomBytes(9).toString('base64url'), name, lang, challenges: ids, minutes, iat: Date.now() };
       if (activation !== 'now') { payload.locked = true; if (opensAt) payload.opensAt = opensAt; }
       if (validTz(body.tz)) payload.tz = body.tz;
       if (THEMES.includes(body.theme) && body.theme !== 'system') payload.theme = body.theme;
-      if (body.email && !validEmail(body.email)) return send(res, 400, { error: 'El correo no es válido.' });
+      if (UI_LANGS.includes(body.ui) && body.ui !== 'es') payload.ui = body.ui;
+      if (body.email && !validEmail(body.email)) return send(res, 400, { error: E(req, 's.bad_email') });
       const token = makeToken(payload);
       const cand = getCandidate(token);
       cand.rebuilt = false;
@@ -353,7 +368,7 @@ async function handle(req, res) {
         if (typeof rec.locked === 'boolean') cand.locked = rec.locked;
         if (rec.opensAt !== undefined) cand.opensAt = Number(rec.opensAt) || null;
         if (Number(rec.deadlineAt)) cand.deadlineAt = Number(rec.deadlineAt);
-        if (cand.status !== 'pending') cand.timeline.push({ t: Date.now(), type: 'restored', detail: 'recuperado del respaldo del admin' });
+        if (cand.status !== 'pending') cand.timeline.push({ t: Date.now(), type: 'restored', detail: 'from_admin' });
         restored++; broadcast(cand);
       }
       if (restored) save();
@@ -362,37 +377,37 @@ async function handle(req, res) {
     const mDetail = p.match(/^\/api\/admin\/candidates\/([\w-]+)$/);
     if (mDetail && m === 'GET') {
       const c = db.candidates[mDetail[1]];
-      return c ? send(res, 200, c) : send(res, 404, { error: 'No existe' });
+      return c ? send(res, 200, c) : send(res, 404, { error: E(req, 's.not_found') });
     }
     const mSched = p.match(/^\/api\/admin\/candidates\/([\w-]+)\/(schedule|email)$/);
     if (mSched && m === 'POST') {
       const c = db.candidates[mSched[1]];
-      if (!c) return send(res, 404, { error: 'No existe' });
+      if (!c) return send(res, 404, { error: E(req, 's.not_found') });
       const body = await readBody(req).catch(() => ({}));
       if (mSched[2] === 'schedule') {
-        if (c.status !== 'pending') return send(res, 409, { error: 'El candidato ya empezó.' });
+        if (c.status !== 'pending') return send(res, 409, { error: E(req, 's.started') });
         const at = body.opensAt == null ? null : Number(body.opensAt);
-        if (at !== null && !(at > Date.now())) return send(res, 400, { error: 'La fecha debe ser en el futuro.' });
+        if (at !== null && !(at > Date.now())) return send(res, 400, { error: E(req, 's.future') });
         if (validTz(body.tz)) c.tz = body.tz;
         c.locked = true; c.activatedAt = null; c.opensAt = at;
-        c.timeline.push({ t: Date.now(), type: at ? 'scheduled' : 'deactivated', detail: at ? fmtDate(at, c.tz) : undefined });
+        c.timeline.push({ t: Date.now(), type: at ? 'scheduled' : 'deactivated', at: at || undefined, tz: at ? c.tz : undefined });
         save(); broadcast(c);
         return send(res, 200, summary(c));
       }
       // email: arma el mensaje; si hay Resend lo envía, si no, el admin lo abre en su cliente de correo.
       if (body.to !== undefined) {
-        if (!validEmail(body.to)) return send(res, 400, { error: 'El correo no es válido.' });
+        if (!validEmail(body.to)) return send(res, 400, { error: E(req, 's.bad_email') });
         c.email = body.to;
       }
       const msg = emailFor(c, String(body.link || ''));
       if (!body.send) return send(res, 200, { ...msg, to: c.email, configured: !!RESEND_API_KEY });
-      if (!RESEND_API_KEY) return send(res, 501, { error: 'Envío directo no configurado.', ...msg });
-      if (!c.email) return send(res, 400, { error: 'Falta el correo del candidato.' });
+      if (!RESEND_API_KEY) return send(res, 501, { error: E(req, 's.no_mail'), ...msg });
+      if (!c.email) return send(res, 400, { error: E(req, 's.need_email') });
       const r = await fetch('https://api.resend.com/emails', {
         method: 'POST', headers: { Authorization: `Bearer ${RESEND_API_KEY}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({ from: MAIL_FROM, to: [c.email], subject: msg.subject, html: msg.html, text: msg.text }),
       }).catch((e) => ({ ok: false, status: 0, text: async () => String(e) }));
-      if (!r.ok) { const t = await r.text(); console.error('[alcor] resend', r.status, t); return send(res, 502, { error: 'El proveedor de correo rechazó el envío: ' + t.slice(0, 200) }); }
+      if (!r.ok) { const t = await r.text(); console.error('[alcor] resend', r.status, t); return send(res, 502, { error: E(req, 's.mail_rejected', { e: t.slice(0, 200) }) }); }
       c.emailedAt = Date.now(); c.timeline.push({ t: c.emailedAt, type: 'emailed', detail: c.email });
       save(); broadcast(c);
       return send(res, 200, { sent: true, to: c.email });
@@ -401,10 +416,10 @@ async function handle(req, res) {
     const mTime = p.match(/^\/api\/admin\/candidates\/([\w-]+)\/time$/);
     if (mTime && m === 'POST') {
       const c = db.candidates[mTime[1]];
-      if (!c) return send(res, 404, { error: 'No existe' });
+      if (!c) return send(res, 404, { error: E(req, 's.not_found') });
       const body = await readBody(req).catch(() => ({}));
       const mins = Math.min(Math.max(parseInt(body.minutes, 10) || 0, 1), 240);
-      if (!mins) return send(res, 400, { error: 'Indica los minutos.' });
+      if (!mins) return send(res, 400, { error: E(req, 's.need_mins') });
       const now = Date.now();
       if (c.status === 'in_progress') {
         c.deadlineAt = Math.max(deadlineOf(c), now) + mins * 60000;
@@ -413,7 +428,7 @@ async function handle(req, res) {
         c.status = 'in_progress'; c.submittedAt = null; c.deadlineAt = now + mins * 60000;
         c.reopens = (c.reopens || 0) + 1;
         c.timeline.push({ t: now, type: 'reopened', detail: `${mins} min` });
-      } else return send(res, 409, { error: 'El candidato aún no empieza.' });
+      } else return send(res, 409, { error: E(req, 's.not_started') });
       save(); broadcast(c);
       return send(res, 200, summary(c));
     }
@@ -421,11 +436,11 @@ async function handle(req, res) {
     const mAct = p.match(/^\/api\/admin\/candidates\/([\w-]+)\/(activate|deactivate)$/);
     if (mAct && m === 'POST') {
       const c = db.candidates[mAct[1]];
-      if (!c) return send(res, 404, { error: 'No existe' });
+      if (!c) return send(res, 404, { error: E(req, 's.not_found') });
       if (mAct[2] === 'activate') {
         if (!c.activatedAt) { c.activatedAt = Date.now(); c.timeline.push({ t: c.activatedAt, type: 'activated' }); }
       } else {
-        if (c.status !== 'pending') return send(res, 409, { error: 'El candidato ya empezó; no se puede desactivar.' });
+        if (c.status !== 'pending') return send(res, 409, { error: E(req, 's.started') });
         c.locked = true; c.activatedAt = null; c.opensAt = null; c.timeline.push({ t: Date.now(), type: 'deactivated' });
       }
       save(); broadcast(c);
@@ -462,24 +477,24 @@ async function handle(req, res) {
   const mc = p.match(/^\/api\/session\/([^/]+)(?:\/(start|sync|submit|resume))?$/);
   if (mc) {
     const cand = getCandidate(mc[1]);
-    if (!cand) return send(res, 404, { error: 'Link inválido.' });
+    if (!cand) return send(res, 404, { error: E(req, 's.invalid_link') });
     const now = Date.now();
-    if (cand.status === 'in_progress' && isLate(cand, now)) expire(cand, 'volvió después del límite');
+    if (cand.status === 'in_progress' && isLate(cand, now)) expire(cand, 'late_return');
     const deadline = () => deadlineOf(cand);
     const view = () => ({
       id: cand.id, name: cand.name, lang: cand.lang, minutes: cand.minutes, status: cand.status,
       startedAt: cand.startedAt, deadline: deadline(), serverNow: Date.now(), code: cand.code,
-      open: isOpen(cand), opensAt: cand.opensAt, tz: cand.tz, theme: cand.theme, versions: cand.versions || {},
+      open: isOpen(cand), opensAt: cand.opensAt, tz: cand.tz, theme: cand.theme, ui: cand.ui || 'es', versions: cand.versions || {},
       challenges: cand.challengeIds.map((id) => publicChallenge(challengeById(id), cand.lang)),
     });
     const fillStarters = () => cand.challengeIds.forEach((id) => {
-      if (typeof cand.code[id] !== 'string') cand.code[id] = challengeById(id).starter[cand.lang];
+      if (typeof cand.code[id] !== 'string') cand.code[id] = CHALLENGES.starterFor(challengeById(id), cand.lang, cand.ui);
     });
 
     if (!mc[2] && m === 'GET') return send(res, 200, view());
 
     if (mc[2] === 'start' && m === 'POST') {
-      if (cand.status === 'pending' && !isOpen(cand)) return send(res, 423, { error: 'La evaluación aún no está activa.', ...view() });
+      if (cand.status === 'pending' && !isOpen(cand)) return send(res, 423, { error: E(req, 's.not_open'), ...view() });
       if (cand.status === 'pending') {
         cand.status = 'in_progress'; cand.startedAt = now; cand.lastSeen = now; cand.rebuilt = false;
         fillStarters();
@@ -500,16 +515,16 @@ async function handle(req, res) {
         cand.lastSeen = now; cand.rebuilt = false; cand.recovered = true;
         if (!isOpen(cand)) cand.activatedAt = cand.startedAt; // si ya había empezado, ya estaba activo
         mergeCode(cand, body.code); mergeVersions(cand, body.versions); fillStarters();
-        cand.timeline.push({ t: now, type: 'restored', detail: 'recuperado del respaldo del candidato' });
+        cand.timeline.push({ t: now, type: 'restored', detail: 'from_candidate' });
         save(); broadcast(cand);
       }
       return send(res, 200, view());
     }
 
     if (mc[2] === 'sync' && m === 'POST') {
-      if (cand.status !== 'in_progress') return send(res, 409, { error: 'La evaluación no está activa.', status: cand.status });
+      if (cand.status !== 'in_progress') return send(res, 409, { error: E(req, 's.not_active'), status: cand.status });
       // Fuera de tiempo: no se acepta nada nuevo; se conserva lo último guardado a tiempo.
-      if (isLate(cand, now)) { expire(cand, 'llegó tarde un guardado'); return send(res, 409, { error: 'Se terminó el tiempo.', status: cand.status }); }
+      if (isLate(cand, now)) { expire(cand, 'late_save'); return send(res, 409, { error: E(req, 's.time_up'), status: cand.status }); }
       const body = await readBody(req).catch(() => null);
       if (!body) return send(res, 400, { error: 'Bad request' });
       const before = JSON.stringify(cand.code);
@@ -538,10 +553,10 @@ async function handle(req, res) {
     }
 
     if (mc[2] === 'submit' && m === 'POST') {
-      if (cand.status !== 'in_progress') return send(res, 409, { error: 'La evaluación ya terminó.', status: cand.status });
+      if (cand.status !== 'in_progress') return send(res, 409, { error: E(req, 's.finished'), status: cand.status });
       const body = await readBody(req).catch(() => ({}));
       // Fuera de tiempo: se ignora el código que llega y se queda lo último guardado a tiempo.
-      if (isLate(cand, now)) { expire(cand, 'envío fuera de tiempo'); return send(res, 200, view()); }
+      if (isLate(cand, now)) { expire(cand, 'late_submit'); return send(res, 200, view()); }
       const d = deadline();
       // Envío automático del navegador, pero el admin le dio más tiempo: sigue en curso.
       if (body.auto && d && now < d - 2000) return send(res, 200, view());
@@ -550,7 +565,7 @@ async function handle(req, res) {
       if (body.auto) { expire(cand); return send(res, 200, view()); }
       cand.status = 'submitted'; cand.submittedAt = now;
       cand.timeline.push({ t: now, type: 'submit' });
-      notify('submitted', cand, `${cand.name} envió su evaluación`);
+      notify('submitted', cand);
       save(); broadcast(cand);
       return send(res, 200, view());
     }
@@ -563,5 +578,5 @@ async function handle(req, res) {
 }
 
 http.createServer((req, res) => {
-  handle(req, res).catch((err) => { console.error(err); if (!res.headersSent) send(res, 500, { error: 'Error interno' }); });
+  handle(req, res).catch((err) => { console.error(err); if (!res.headersSent) send(res, 500, { error: E(req, 's.internal') }); });
 }).listen(PORT, () => console.log(`[alcor] escuchando en http://localhost:${PORT}`));

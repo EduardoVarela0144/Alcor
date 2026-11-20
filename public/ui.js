@@ -2,6 +2,8 @@
 window.UI = (function () {
   const $ = (s, r = document) => r.querySelector(s);
   const $$ = (s, r = document) => [...r.querySelectorAll(s)];
+  const t = (k, v) => I18N.t(k, v);
+  const loc = () => I18N.locale();
   const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   const json = (v, lang) => {
     if (v === undefined) return '—';
@@ -54,7 +56,8 @@ window.UI = (function () {
   const getTheme = TH.get;
   function applyTheme(id) { themeFallback = id; if (!TH.get()) TH.apply(id); refreshThemeButtons(); }
   function setTheme(id) { TH.set(id); refreshThemeButtons(); }
-  const SYSTEM = { id: 'system', name: 'Sistema' };
+  const SYSTEM = { id: 'system', get name() { return t('theme.system'); } };
+  const tname = (th) => (I18N.lang() === 'en' && th.en ? th.en : th.name);
   function swatch(t) {
     if (t.id === 'system') {
       const l = TH.byId('light').c, d = TH.byId('dark').c;
@@ -62,39 +65,39 @@ window.UI = (function () {
     }
     return `<span class="swatch" style="background:${t.c.panel};border-color:${t.c.borderStrong}"><i style="background:${t.c.primary}"></i></span>`;
   }
-  const themeLabel = (id) => (TH.byId(id) || SYSTEM).name;
+  const themeLabel = (id) => tname(TH.byId(id) || SYSTEM);
   function themeBtnInner() { const id = themeId(); return `${swatch(TH.byId(id) || SYSTEM)}<span class="tname">${esc(themeLabel(id))}</span>`; }
   function refreshThemeButtons() { $$('[data-theme-open]').forEach((b) => { b.innerHTML = themeBtnInner(); }); }
   // Botón que abre el selector de temas; `fallback` es el tema que preparó el admin.
   function themeSwitch(fallback) {
     if (fallback && !themeFallback) themeFallback = fallback;
-    return `<button type="button" class="btn sm theme-btn" data-theme-open title="Cambiar tema" aria-label="Cambiar tema">${themeBtnInner()}</button>`;
+    return `<button type="button" class="btn sm theme-btn" data-theme-open title="${t('theme.change')}" aria-label="${t('theme.change')}">${themeBtnInner()}</button>`;
   }
-  function themeCard(t, on) {
+  function themeCard(th, on) {
     const prev = (c) => `<span class="tp" style="background:${c.bg};border-color:${c.border}">
         <span class="tp-side" style="background:${c.subtle};border-color:${c.border}"><i style="background:${c.faint}"></i><i style="background:${c.faint}"></i></span>
         <span class="tp-main" style="background:${c.panel}">
           <i style="background:${c.k};width:30%"></i><i style="background:${c.d};width:55%;margin-left:12%"></i><i style="background:${c.s};width:40%;margin-left:12%"></i><i style="background:${c.n};width:22%"></i>
           <b style="background:${c.primary}"></b></span></span>`;
-    const body = t.id === 'system'
+    const body = th.id === 'system'
       ? `<span class="tp-split">${prev(TH.byId('light').c)}${prev(TH.byId('dark').c)}</span>`
-      : prev(t.c);
-    return `<button type="button" class="theme-card ${on ? 'on' : ''}" data-theme-pick="${t.id}">${body}<span class="tc-name">${esc(t.name)}${on ? icon('check') : ''}</span></button>`;
+      : prev(th.c);
+    return `<button type="button" class="theme-card ${on ? 'on' : ''}" data-theme-pick="${th.id}">${body}<span class="tc-name">${esc(tname(th))}${on ? icon('check') : ''}</span></button>`;
   }
   function openThemePicker() {
     const render = () => {
       const cur = themeId();
-      const grid = (list) => `<div class="theme-grid">${list.map((t) => themeCard(t, t.id === cur)).join('')}</div>`;
+      const grid = (list) => `<div class="theme-grid">${list.map((th) => themeCard(th, th.id === cur)).join('')}</div>`;
       const size = TH.size();
       return `<div class="picker">
-        <div class="section-title" style="margin-top:0">Automático</div>${grid([SYSTEM])}
-        <div class="section-title">Claros</div>${grid(TH.list.filter((t) => !t.dark))}
-        <div class="section-title">Oscuros</div>${grid(TH.list.filter((t) => t.dark))}
-        <div class="section-title">Tamaño del código</div>
-        <div class="seg">${[12, 13.5, 15, 17].map((px, i) => `<button type="button" data-size="${px}" class="${size === px ? 'on' : ''}">${['Chico', 'Normal', 'Grande', 'Muy grande'][i]}</button>`).join('')}</div>
+        <div class="section-title" style="margin-top:0">${t('theme.auto')}</div>${grid([SYSTEM])}
+        <div class="section-title">${t('theme.light')}</div>${grid(TH.list.filter((th) => !th.dark))}
+        <div class="section-title">${t('theme.dark')}</div>${grid(TH.list.filter((th) => th.dark))}
+        <div class="section-title">${t('theme.size')}</div>
+        <div class="seg">${[12, 13.5, 15, 17].map((px, i) => `<button type="button" data-size="${px}" class="${size === px ? 'on' : ''}">${t(['size.s', 'size.m', 'size.l', 'size.xl'][i])}</button>`).join('')}</div>
       </div>`;
     };
-    const m = modal({ title: 'Tema', body: render() });
+    const m = modal({ title: t('theme.title'), body: render() });
     m.el.querySelector('.modal').style.maxWidth = '780px';
     const wire = () => {
       $$('[data-theme-pick]', m.el).forEach((b) => b.onclick = () => { setTheme(b.dataset.themePick); m.el.querySelector('.modal-b').innerHTML = render(); wire(); });
@@ -105,8 +108,8 @@ window.UI = (function () {
   document.addEventListener('click', (e) => { if (e.target.closest('[data-theme-open]')) openThemePicker(); });
   // Lista de temas para formularios (p. ej. el tema inicial del candidato).
   function themeOptions(selected) {
-    const o = (t) => `<option value="${t.id}" ${t.id === selected ? 'selected' : ''}>${esc(t.name)}</option>`;
-    return `<optgroup label="Automático">${o(SYSTEM)}</optgroup><optgroup label="Claros">${TH.list.filter((t) => !t.dark).map(o).join('')}</optgroup><optgroup label="Oscuros">${TH.list.filter((t) => t.dark).map(o).join('')}</optgroup>`;
+    const o = (th) => `<option value="${th.id}" ${th.id === selected ? 'selected' : ''}>${esc(tname(th))}</option>`;
+    return `<optgroup label="${t('theme.auto')}">${o(SYSTEM)}</optgroup><optgroup label="${t('theme.light')}">${TH.list.filter((th) => !th.dark).map(o).join('')}</optgroup><optgroup label="${t('theme.dark')}">${TH.list.filter((th) => th.dark).map(o).join('')}</optgroup>`;
   }
 
   // ---------- zonas horarias ----------
@@ -133,14 +136,14 @@ window.UI = (function () {
   }
   const tzLabel = (tz) => tz.replace(/_/g, ' ').split('/').pop();
   function tzShort(t, tz) {
-    try { return new Intl.DateTimeFormat('es-MX', { timeZone: tz, timeZoneName: 'shortOffset' }).formatToParts(t).find((p) => p.type === 'timeZoneName').value; } catch { return ''; }
+    try { return new Intl.DateTimeFormat(loc(), { timeZone: tz, timeZoneName: 'shortOffset' }).formatToParts(t).find((p) => p.type === 'timeZoneName').value; } catch { return ''; }
   }
-  const fmtIn = (t, tz, opts = {}) => new Intl.DateTimeFormat('es-MX', { timeZone: tz, weekday: 'long', day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit', ...opts }).format(t);
+  const fmtIn = (ms, tz, opts = {}) => new Intl.DateTimeFormat(loc(), { timeZone: tz, weekday: 'long', day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit', ...opts }).format(ms);
   function tzOptions(selected) {
     const all = (Intl.supportedValuesOf ? Intl.supportedValuesOf('timeZone') : POPULAR_TZ).filter((z) => !POPULAR_TZ.includes(z));
     const opt = (z) => `<option value="${z}" ${z === selected ? 'selected' : ''}>${esc(tzLabel(z))} (${tzShort(Date.now(), z)})</option>`;
     const mine = localTz();
-    return `<optgroup label="Tu zona horaria">${opt(mine)}</optgroup><optgroup label="Frecuentes">${POPULAR_TZ.filter((z) => z !== mine).map(opt).join('')}</optgroup><optgroup label="Todas">${all.filter((z) => z !== mine).map(opt).join('')}</optgroup>`;
+    return `<optgroup label="${t('tz.mine')}">${opt(mine)}</optgroup><optgroup label="${t('tz.popular')}">${POPULAR_TZ.filter((z) => z !== mine).map(opt).join('')}</optgroup><optgroup label="${t('tz.all')}">${all.filter((z) => z !== mine).map(opt).join('')}</optgroup>`;
   }
 
   // ---------- resultados de tests ----------
@@ -152,11 +155,11 @@ window.UI = (function () {
     container.innerHTML = res.cases.map((c, i) => `
       <div class="case ${c.ok ? 'ok' : 'fail'}">
         <div class="case-head"><span class="icon">${c.ok ? '✓' : '✕'}</span>
-          Caso ${i + 1}${c.hidden ? ' <span class="tag">oculto</span>' : ''}
+          ${t('res.case', { n: i + 1 })}${c.hidden ? ` <span class="tag">${t('hidden')}</span>` : ''}
           <span class="faint mono" style="margin-left:auto;font-weight:400;font-size:11.5px">${c.ms != null ? c.ms.toFixed(1) + ' ms' : ''}</span></div>
-        ${c.ok ? '' : `<div class="case-body"><b>Entrada</b>${esc(signature(lang, fn, c.args))}
-<b>Esperado</b>${esc(json(c.expected, lang))}
-<b>${c.error ? 'Error' : 'Obtenido'}</b>${esc(c.error || json(c.actual, lang))}</div>`}
+        ${c.ok ? '' : `<div class="case-body"><b>${t('res.input')}</b>${esc(signature(lang, fn, c.args))}
+<b>${t('res.expected')}</b>${esc(json(c.expected, lang))}
+<b>${c.error ? t('res.error') : t('res.got')}</b>${esc(c.error || json(c.actual, lang))}</div>`}
       </div>`).join('');
   }
 
@@ -164,7 +167,7 @@ window.UI = (function () {
   function modal({ title, body, footer = '', size = '' }) {
     const ov = document.createElement('div');
     ov.className = 'overlay';
-    ov.innerHTML = `<div class="modal ${size}" role="dialog" aria-modal="true"><div class="modal-h"><h3>${title}</h3><div class="spacer"></div><button class="icon-btn" data-close aria-label="Cerrar">${icon('x')}</button></div><div class="modal-b">${body}</div>${footer ? `<div class="modal-f">${footer}</div>` : ''}</div>`;
+    ov.innerHTML = `<div class="modal ${size}" role="dialog" aria-modal="true"><div class="modal-h"><h3>${title}</h3><div class="spacer"></div><button class="icon-btn" data-close aria-label="${t('close')}">${icon('x')}</button></div><div class="modal-b">${body}</div>${footer ? `<div class="modal-f">${footer}</div>` : ''}</div>`;
     const close = () => { ov.remove(); document.removeEventListener('keydown', onKey); };
     const onKey = (e) => { if (e.key === 'Escape') close(); };
     ov.addEventListener('mousedown', (e) => { if (e.target === ov) close(); });
@@ -173,10 +176,10 @@ window.UI = (function () {
     document.body.appendChild(ov);
     return { el: ov, close };
   }
-  function confirmBox(title, text, okLabel = 'Confirmar', danger = false) {
+  function confirmBox(title, text, okLabel = t('confirm'), danger = false) {
     return new Promise((resolve) => {
       const m = modal({ title, size: 'sm', body: `<p style="margin:0;padding:16px 18px;color:var(--muted);line-height:1.6">${text}</p>`,
-        footer: `<div class="spacer"></div><button class="btn" data-no>Cancelar</button><button class="btn primary ${danger ? 'danger' : ''}" data-yes>${okLabel}</button>` });
+        footer: `<div class="spacer"></div><button class="btn" data-no>${t('cancel')}</button><button class="btn primary ${danger ? 'danger' : ''}" data-yes>${okLabel}</button>` });
       const done = (v) => { m.close(); resolve(v); };
       m.el.querySelector('[data-no]').onclick = () => done(false);
       m.el.querySelector('[data-yes]').onclick = () => done(true);
@@ -200,17 +203,21 @@ window.UI = (function () {
   const fmtCountdown = (ms) => {
     const s = Math.max(0, Math.floor(ms / 1000));
     const d = Math.floor(s / 86400), h = Math.floor((s % 86400) / 3600), m = Math.floor((s % 3600) / 60);
-    return d ? `${d} d ${h} h ${m} min` : h ? `${h} h ${m} min` : fmtTime(ms);
+    return d ? t('cd.d', { d, h, m }) : h ? t('cd.h', { h, m }) : fmtTime(ms);
   };
-  const ago = (t) => {
-    const s = (Date.now() - t) / 1000;
-    if (s < 45) return 'hace un momento';
-    if (s < 3600) return `hace ${Math.round(s / 60)} min`;
-    if (s < 86400) return `hace ${Math.round(s / 3600)} h`;
-    return new Date(t).toLocaleDateString('es-MX', { day: 'numeric', month: 'short' });
+  const ago = (ms) => {
+    const s = (Date.now() - ms) / 1000;
+    if (s < 45) return t('ago.now');
+    if (s < 3600) return t('ago.min', { n: Math.round(s / 60) });
+    if (s < 86400) return t('ago.h', { n: Math.round(s / 3600) });
+    return new Date(ms).toLocaleDateString(loc(), { day: 'numeric', month: 'short' });
   };
-  const hhmm = (t) => new Date(t).toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
+  const hhmm = (ms) => new Date(ms).toLocaleTimeString(loc(), { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
 
-  return { $, $$, esc, md, json, LANG, signature, renderResults, toast, fmtTime, fmtCountdown, ago, hhmm, icon, LOGO,
+  // Texto de un ejercicio en el idioma actual (title / description / topic) y su dificultad
+  const exText = (c, f) => (I18N.lang() === 'en' && c.en && c.en[f] ? c.en[f] : c[f]);
+  const diff = (d) => t('diff.' + d);
+  const starter = (code) => (I18N.lang() === 'en' ? String(code).replace('tu código aquí', t('starter.comment')) : code);
+  return { t, loc, exText, diff, starter, langSwitch: () => I18N.switcher(), $, $$, esc, md, json, LANG, signature, renderResults, toast, fmtTime, fmtCountdown, ago, hhmm, icon, LOGO,
     themeSwitch, setTheme, getTheme, applyTheme, themeOptions, themeLabel, swatch, onThemeChange: TH.onChange, localTz, zonedToUtc, utcToZonedInput, tzLabel, tzShort, fmtIn, tzOptions, modal, confirmBox };
 })();

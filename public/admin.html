@@ -11,6 +11,7 @@
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500&display=swap">
   <link rel="stylesheet" href="/vendor/codemirror/codemirror.css">
   <link rel="stylesheet" href="/styles.css">
+  <script src="/i18n.js"></script>
   <script src="/themes.js"></script>
 </head>
 <body>
@@ -19,12 +20,12 @@
     <div class="corner theme-slot"></div>
     <form class="center-card" id="login-form" style="max-width:360px">
       <div class="brand logo-slot">Alcor</div>
-      <h1>Panel del evaluador</h1>
-      <p>Acceso restringido. Ingresa la contraseña de administrador.</p>
-      <label for="pw">Contraseña</label>
+      <h1 data-i18n="a.login.h"></h1>
+      <p data-i18n="a.login.d"></p>
+      <label for="pw" data-i18n="a.password"></label>
       <input id="pw" type="password" autocomplete="current-password" required autofocus>
       <div class="error-text" id="login-err"></div>
-      <button class="btn primary lg block">Entrar</button>
+      <button class="btn primary lg block" data-i18n="a.enter"></button>
     </form>
   </div>
 
@@ -37,10 +38,10 @@
       <button class="nav-item" data-view="catalog" id="nav-catalog"></button>
       <button class="nav-item" id="nav-notices"></button>
       <div class="side-foot">
-        <span class="status" id="stream-status" style="padding:0 6px">Conectando…</span>
+        <span class="status" id="stream-status" style="padding:0 6px" data-i18n="a.connecting"></span>
         <div class="theme-slot"></div>
         <div style="display:flex;gap:4px">
-          <a class="btn ghost sm" href="/api/admin/export" id="btn-export" title="Descargar todos los datos en JSON"></a>
+          <a class="btn ghost sm" href="/api/admin/export" id="btn-export" data-i18n-title="a.export.t"></a>
           <button class="btn ghost sm" id="btn-logout"></button>
         </div>
       </div>
@@ -49,9 +50,9 @@
       <!-- Candidatos -->
       <section id="view-cands" class="view" style="flex-direction:column">
         <div class="bar">
-          <h1>Candidatos</h1>
+          <h1 data-i18n="a.nav.cands"></h1>
           <div class="seg" id="filter">
-            <button class="on" data-f="all">Todos</button><button data-f="ready">Preparados</button><button data-f="live">En curso</button><button data-f="done">Terminados</button>
+            <button class="on" data-f="all" data-i18n="a.f.all"></button><button data-f="ready" data-i18n="a.f.ready"></button><button data-f="live" data-i18n="a.f.live"></button><button data-f="done" data-i18n="a.f.done"></button>
           </div>
           <div class="spacer"></div>
           <button class="btn sm hidden" id="btn-activate-all"></button>
@@ -67,13 +68,13 @@
 
       <!-- Nuevo candidato -->
       <section id="view-new" class="view hidden" style="flex-direction:column">
-        <div class="bar"><h1>Nuevo candidato</h1></div>
+        <div class="bar"><h1 data-i18n="a.nav.new"></h1></div>
         <div class="view"><div class="page"><div class="page-inner" id="new-page"></div></div></div>
       </section>
 
       <!-- Catálogo -->
       <section id="view-catalog" class="view hidden" style="flex-direction:column">
-        <div class="bar"><h1>Catálogo de ejercicios</h1><span class="faint mono" id="cat-count"></span></div>
+        <div class="bar"><h1 data-i18n="a.cat.title"></h1><span class="faint mono" id="cat-count"></span></div>
         <div class="view">
           <div class="split" style="grid-template-columns:minmax(0,420px) minmax(0,1fr)">
             <div class="list-pane"><div class="list" id="cat-list"></div></div>

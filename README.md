@@ -15,6 +15,9 @@ de administrador al que solo tú tienes acceso.
   informativos y no se pueden falsificar para el admin).
 - **Versiones**: el candidato guarda copias con nombre (⌘S / Ctrl+S) y se crea una automática cada vez que corre
   los tests. Puede ver cualquiera y restaurarla; antes de restaurar se guarda su código actual. Tú también ves sus versiones.
+- **Español / inglés** con selector ES · EN en el panel y en la pantalla del candidato: interfaz, los 17 ejercicios,
+  correos, errores y fechas. Al preparar un link eliges el idioma inicial del candidato; él puede cambiarlo. Los textos
+  están en `public/i18n.js` y las traducciones de los ejercicios al final de `challenges.js`.
 - **22 temas + Sistema** (Claro, Papel, GitHub, Solarized, Catppuccin, Rosé Pine, Menta, Oscuro, Medianoche, Dracula,
   Nord, One Dark, Tokyo Night, Gruvbox, Monokai, Océano y dos de alto contraste) con vista previa, más tamaño del código.
   Eliges el tema inicial del candidato al preparar el link y cada quien puede cambiarlo. Se definen en `public/themes.js`.

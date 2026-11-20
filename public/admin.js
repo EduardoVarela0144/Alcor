@@ -1,5 +1,5 @@
 (function () {
-  const { $, $$, esc, md, json, LANG, renderResults, toast, fmtTime, fmtCountdown, signature, icon, LOGO, ago, hhmm,
+  const { t, loc, exText, diff, starter, langSwitch, $, $$, esc, md, json, LANG, renderResults, toast, fmtTime, fmtCountdown, signature, icon, LOGO, ago, hhmm,
     themeSwitch, themeOptions, onThemeChange, localTz, zonedToUtc, utcToZonedInput, tzLabel, tzShort, fmtIn, tzOptions, modal, confirmBox } = UI;
   const CACHE_KEY = 'alcor:admin-cache';
   onThemeChange(() => { if (viewer) viewer.refresh(); }); // re-medir el editor si cambia el tamaño del código
@@ -15,29 +15,32 @@
   let filter = 'all';
 
   // ---------- estáticos ----------
+  I18N.apply();
   $$('.logo-slot').forEach((el) => { el.innerHTML = LOGO + 'Alcor'; });
-  $$('.theme-slot').forEach((el) => { el.innerHTML = themeSwitch(); });
-  $('#nav-cands').innerHTML = `${icon('users')} Candidatos <span class="count" id="count-cands"></span>`;
-  $('#nav-new').innerHTML = `${icon('plus')} Nuevo candidato`;
-  $('#nav-catalog').innerHTML = `${icon('book')} Catálogo <span class="count" id="count-cat"></span>`;
-  $('#nav-notices').innerHTML = `${icon('bell')} Avisos <span class="badge hidden" id="count-notices"></span>`;
-  $('#btn-export').innerHTML = `${icon('download')} Exportar`;
-  $('#btn-logout').innerHTML = `${icon('logout')} Salir`;
-  $('#btn-new-top').innerHTML = `${icon('plus')} Nuevo`;
+  $$('.theme-slot').forEach((el) => { el.innerHTML = themeSwitch() + langSwitch(); });
+  $('#nav-cands').innerHTML = `${icon('users')} ${t('a.nav.cands')} <span class="count" id="count-cands"></span>`;
+  $('#nav-new').innerHTML = `${icon('plus')} ${t('a.nav.new')}`;
+  $('#nav-catalog').innerHTML = `${icon('book')} ${t('a.nav.catalog')} <span class="count" id="count-cat"></span>`;
+  $('#nav-notices').innerHTML = `${icon('bell')} ${t('a.nav.notices')} <span class="badge hidden" id="count-notices"></span>`;
+  $('#btn-export').innerHTML = `${icon('download')} ${t('a.export')}`;
+  $('#btn-logout').innerHTML = `${icon('logout')} ${t('a.logout')}`;
+  $('#btn-new-top').innerHTML = `${icon('plus')} ${t('a.new')}`;
 
   // ---------- estado de un candidato ----------
   const isLocked = (c) => c.status === 'pending' && c.locked && !c.activatedAt && !(c.opensAt && Date.now() >= c.opensAt);
   function statusOf(c) {
-    if (isLocked(c)) return c.opensAt ? ['sched', 'Programado'] : ['ready', 'Preparado'];
-    return { pending: ['', 'Sin iniciar'], in_progress: ['live', 'En curso'], submitted: ['done', 'Enviado'], expired: ['warn', 'Tiempo agotado'] }[c.status] || ['', c.status];
+    if (isLocked(c)) return c.opensAt ? ['sched', t('st.sched')] : ['ready', t('st.ready')];
+    return { pending: ['', t('st.pending')], in_progress: ['live', t('st.live')], submitted: ['done', t('st.done')], expired: ['warn', t('st.expired')] }[c.status] || ['', c.status];
   }
   const statusHtml = (c) => { const [k, l] = statusOf(c); return `<span class="status ${k}">${l}</span>`; };
   const linkOf = (c) => `${location.origin}/c/${c.token}`;
   const chById = (id) => challenges.find((x) => x.id === id);
+  const title = (id) => { const c = chById(id); return c ? exText(c, 'title') : id; };
   const idsOf = (c) => c.challengeIds || (c.challengeId ? [c.challengeId] : []);
-  const shortDate = (t, tz) => new Intl.DateTimeFormat('es-MX', { timeZone: tz || localTz(), weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }).format(t);
+  const shortDate = (ms, tz) => new Intl.DateTimeFormat(loc(), { timeZone: tz || localTz(), weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }).format(ms);
   const isTyping = (c) => c.status === 'in_progress' && c.typingAt && Date.now() - c.typingAt < 3000;
   const deadlineOf = (c) => c.deadlineAt || (c.startedAt ? c.startedAt + c.minutes * 60000 : 0);
+  const UI_LANG_NAME = { es: 'Español', en: 'English' };
 
   // ---------- respaldo local del admin ----------
   const cache = (() => { try { return JSON.parse(localStorage.getItem(CACHE_KEY)) || {}; } catch { return {}; } })();
@@ -49,11 +52,13 @@
   }
   function forget(id) { delete cache[id]; try { localStorage.setItem(CACHE_KEY, JSON.stringify(cache)); } catch { /* */ } }
 
+  // Todas las peticiones mandan el idioma para que los errores lleguen traducidos.
+  const HEADERS = { 'Content-Type': 'application/json', 'X-Lang': I18N.lang() };
   async function api(path, opts = {}) {
-    const r = await fetch(path, { ...opts, headers: { 'Content-Type': 'application/json', ...(opts.headers || {}) } });
+    const r = await fetch(path, { ...opts, headers: { ...HEADERS, ...(opts.headers || {}) } });
     if (r.status === 401) { showLogin(); throw new Error('401'); }
     const d = await r.json();
-    if (!r.ok) { const e = new Error(d.error || 'Error'); e.data = d; e.status = r.status; throw e; }
+    if (!r.ok) { const e = new Error(d.error || t('error')); e.data = d; e.status = r.status; throw e; }
     return d;
   }
   const fail = (err) => { if (err.message !== '401') toast(err.message); };
@@ -63,9 +68,9 @@
   $('#login-form').onsubmit = async (e) => {
     e.preventDefault();
     $('#login-err').textContent = '';
-    const r = await fetch('/api/admin/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ password: $('#pw').value }) });
+    const r = await fetch('/api/admin/login', { method: 'POST', headers: HEADERS, body: JSON.stringify({ password: $('#pw').value }) });
     const d = await r.json().catch(() => ({}));
-    if (!r.ok) { $('#login-err').textContent = d.error || 'Error'; return; }
+    if (!r.ok) { $('#login-err').textContent = d.error || t('error'); return; }
     $('#pw').value = '';
     start();
   };
@@ -80,7 +85,7 @@
     if (view === 'new') renderNewForm();
     if (view === 'catalog') renderCatalogView();
   }
-  $$('.nav-item').forEach((b) => b.onclick = () => go(b.dataset.view));
+  $$('.nav-item[data-view]').forEach((b) => b.onclick = () => go(b.dataset.view));
   document.addEventListener('click', (e) => { const b = e.target.closest('[data-goto]'); if (b) go(b.dataset.goto); });
   $$('#filter button').forEach((b) => b.onclick = () => { filter = b.dataset.f; $$('#filter button').forEach((x) => x.classList.toggle('on', x === b)); renderList(); });
 
@@ -102,7 +107,7 @@
     });
     if (missing.length) {
       const { restored } = await api('/api/admin/restore', { method: 'POST', body: JSON.stringify({ candidates: missing }) });
-      if (restored) { toast(`Se recuperaron ${restored} candidato(s) del respaldo local`); list = await api('/api/admin/candidates'); }
+      if (restored) { toast(t('a.restored', { n: restored })); list = await api('/api/admin/candidates'); }
     }
     list.forEach((c) => { cands.set(c.id, c); remember(c); });
     renderList();
@@ -115,48 +120,51 @@
   // =====================================================================
   // Nuevo candidato
   // =====================================================================
-  const form = { name: '', email: '', lang: 'python', theme: 'system', ids: [], minutes: null, activation: 'now', date: '', tz: localTz() };
+  const form = { name: '', email: '', lang: 'python', theme: 'system', ui: I18N.lang(), ids: [], minutes: null, activation: 'now', date: '', tz: localTz() };
+  const GROUPS = ['Fácil', 'Media', 'Difícil'];
   function renderNewForm(done) {
     const page = $('#new-page');
     if (done) return renderCreated(done);
-    const groups = ['Fácil', 'Media', 'Difícil'];
     const segBtn = (key, v, label, ic) => `<button type="button" data-k="${key}" data-v="${v}" class="${form[key] === v ? 'on' : ''}">${ic ? icon(ic) : ''}${label}</button>`;
     page.innerHTML = `
-      <h2>Nuevo candidato</h2>
-      <p>Configura la evaluación, genera el link y compártelo por correo. Puedes dejarlo preparado y activarlo después.</p>
+      <h2>${t('a.nav.new')}</h2>
+      <p>${t('a.new.d')}</p>
       <form id="new-form" autocomplete="off">
-        <div class="card"><div class="card-h"><span class="n">1</span><h3>Candidato</h3></div><div class="card-b">
+        <div class="card"><div class="card-h"><span class="n">1</span><h3>${t('a.s.cand')}</h3></div><div class="card-b">
           <div class="grid2">
-            <div><label for="f-name">Nombre</label><input id="f-name" placeholder="Ana López" maxlength="80" value="${esc(form.name)}" required></div>
-            <div><label for="f-email">Correo <span class="faint" style="font-weight:400">(opcional)</span></label><input id="f-email" type="email" placeholder="ana@correo.com" value="${esc(form.email)}"></div>
+            <div><label for="f-name">${t('a.name')}</label><input id="f-name" placeholder="Ana López" maxlength="80" value="${esc(form.name)}" required></div>
+            <div><label for="f-email">${t('a.email')} <span class="faint" style="font-weight:400">${t('a.optional')}</span></label><input id="f-email" type="email" placeholder="${t('a.email.ph')}" value="${esc(form.email)}"></div>
           </div>
           <div class="grid2" style="margin-top:14px">
-            <div><span class="label">Lenguaje</span><div class="seg full">${segBtn('lang', 'python', 'Python')}${segBtn('lang', 'javascript', 'JavaScript')}</div></div>
-            <div><label for="f-theme">Tema inicial del candidato</label><select id="f-theme">${themeOptions(form.theme)}</select>
-            <div class="hint">El candidato puede cambiarlo cuando quiera.</div></div>
+            <div><span class="label">${t('a.plang')}</span><div class="seg full">${segBtn('lang', 'python', 'Python')}${segBtn('lang', 'javascript', 'JavaScript')}</div></div>
+            <div><span class="label">${t('a.ui0')}</span><div class="seg full">${segBtn('ui', 'es', 'Español')}${segBtn('ui', 'en', 'English')}</div></div>
+          </div>
+          <div class="grid2" style="margin-top:14px">
+            <div><label for="f-theme">${t('a.theme0')}</label><select id="f-theme">${themeOptions(form.theme)}</select></div>
+            <div class="hint" style="align-self:end;margin-bottom:8px">${t('a.can_change')}</div>
           </div>
         </div></div>
 
-        <div class="card"><div class="card-h"><span class="n">2</span><h3>Ejercicios</h3><div class="spacer"></div><span class="faint" id="f-count"></span></div><div class="card-b">
-          <div class="catalog" id="catalog">${groups.map((g) => {
+        <div class="card"><div class="card-h"><span class="n">2</span><h3>${t('a.s.ex')}</h3><div class="spacer"></div><span class="faint" id="f-count"></span></div><div class="card-b">
+          <div class="catalog" id="catalog">${GROUPS.map((g) => {
             const items = challenges.filter((c) => c.difficulty === g);
-            return `<div class="cat-group">${g}<span class="spacer"></span>${items.length}</div>` + items.map((c) => `
+            return `<div class="cat-group">${diff(g)}<span class="spacer"></span>${items.length}</div>` + items.map((c) => `
               <label class="cat-item" style="margin:0;font-weight:400"><input type="checkbox" value="${c.id}" ${form.ids.includes(c.id) ? 'checked' : ''}>
-                <span class="t">${esc(c.title)}<small>${esc(c.topic || '')} · ${c.minutes} min · ${c.tests.length} casos</small></span>
-                <button type="button" class="link" data-preview="${c.id}">Ver</button></label>`).join('');
+                <span class="t">${esc(exText(c, 'title'))}<small>${esc(exText(c, 'topic') || '')} · ${c.minutes} min · ${t('a.n_cases', { n: c.tests.length })}</small></span>
+                <button type="button" class="link" data-preview="${c.id}">${t('a.view')}</button></label>`).join('');
           }).join('')}</div>
           <div class="grid2" style="margin-top:14px">
-            <div><label for="f-min">Duración (minutos)</label><input id="f-min" type="number" min="5" max="240"><div class="hint">Se calcula con la suma sugerida; ajústala si quieres.</div></div>
+            <div><label for="f-min">${t('a.duration')}</label><input id="f-min" type="number" min="5" max="240"><div class="hint">${t('a.duration.h')}</div></div>
           </div>
         </div></div>
 
-        <div class="card"><div class="card-h"><span class="n">3</span><h3>Acceso</h3></div><div class="card-b">
-          <div class="seg full">${segBtn('activation', 'now', 'Al instante', 'zap')}${segBtn('activation', 'manual', 'Preparado', 'lock')}${segBtn('activation', 'scheduled', 'Programado', 'calendar')}</div>
+        <div class="card"><div class="card-h"><span class="n">3</span><h3>${t('a.s.access')}</h3></div><div class="card-b">
+          <div class="seg full">${segBtn('activation', 'now', t('a.act.now'), 'zap')}${segBtn('activation', 'manual', t('a.act.manual'), 'lock')}${segBtn('activation', 'scheduled', t('a.act.sched'), 'calendar')}</div>
           <div class="hint" id="f-act-help"></div>
           <div id="f-sched" class="${form.activation === 'scheduled' ? '' : 'hidden'}">
             <div class="tz-row">
-              <div><label for="f-date">Fecha y hora</label><input id="f-date" type="datetime-local" value="${esc(form.date)}"></div>
-              <div><label for="f-tz">Zona horaria de esa hora</label><select id="f-tz">${tzOptions(form.tz)}</select></div>
+              <div><label for="f-date">${t('a.datetime')}</label><input id="f-date" type="datetime-local" value="${esc(form.date)}"></div>
+              <div><label for="f-tz">${t('a.tz_of')}</label><select id="f-tz">${tzOptions(form.tz)}</select></div>
             </div>
             <div class="tz-preview" id="f-tz-preview"></div>
           </div>
@@ -167,12 +175,8 @@
       </form>`;
 
     const updateHelp = () => {
-      $('#f-act-help').textContent = {
-        now: 'El candidato puede empezar en cuanto abra el link.',
-        manual: 'Comparte el link desde hoy. Verá “aún no inicia tu prueba” hasta que tú lo actives desde el panel.',
-        scheduled: 'Se activa sola a la hora indicada. Cada candidato la ve convertida a su hora local.',
-      }[form.activation];
-      $('#f-submit').innerHTML = form.activation === 'now' ? `${icon('zap')} Generar link` : `${icon('lock')} Preparar link`;
+      $('#f-act-help').textContent = t({ now: 'a.act.now.h', manual: 'a.act.manual.h', scheduled: 'a.act.sched.h' }[form.activation]);
+      $('#f-submit').innerHTML = form.activation === 'now' ? `${icon('zap')} ${t('a.gen')}` : `${icon('lock')} ${t('a.prep')}`;
       $('#f-sched').classList.toggle('hidden', form.activation !== 'scheduled');
       if (form.activation === 'scheduled' && !$('#f-date').value) {
         $('#f-date').value = form.date = utcToZonedInput(Date.now() + 864e5, form.tz).slice(0, 10) + 'T10:00'; // mañana 10:00
@@ -181,22 +185,22 @@
     };
     const updateTzPreview = () => {
       const el = $('#f-tz-preview'); if (!el || form.activation !== 'scheduled') return;
-      const v = $('#f-date').value; if (!v) { el.textContent = 'Elige fecha y hora.'; return; }
-      const t = zonedToUtc(v, form.tz), mine = localTz();
+      const v = $('#f-date').value; if (!v) { el.textContent = t('a.pick_dt'); return; }
+      const at = zonedToUtc(v, form.tz), mine = localTz();
       const rows = [
-        `<b>${esc(fmtIn(t, form.tz))}</b> en ${esc(tzLabel(form.tz))} (${tzShort(t, form.tz)})`,
-        mine !== form.tz ? `${esc(fmtIn(t, mine))} en tu hora (${esc(tzLabel(mine))})` : '',
-        `${esc(fmtIn(t, 'UTC'))} UTC`,
-        t <= Date.now() ? '<span style="color:var(--red)">Esa hora ya pasó.</span>' : `Se abre en ${fmtCountdown(t - Date.now())}.`,
+        `${t('a.in_tz', { date: `<b>${esc(fmtIn(at, form.tz))}</b>`, tz: esc(tzLabel(form.tz)) })} (${tzShort(at, form.tz)})`,
+        mine !== form.tz ? esc(t('a.in_mine', { date: fmtIn(at, mine), tz: tzLabel(mine) })) : '',
+        `${esc(fmtIn(at, 'UTC'))} UTC`,
+        at <= Date.now() ? `<span style="color:var(--red)">${t('a.past')}</span>` : t('a.opens_in', { t: fmtCountdown(at - Date.now()) }),
       ].filter(Boolean);
       el.innerHTML = rows.join('<br>');
     };
     const updateSel = () => {
       form.ids = $$('#catalog input:checked').map((b) => b.value);
-      $('#f-count').textContent = form.ids.length ? `${form.ids.length} seleccionado(s)` : 'Elige uno o varios (máx. 6)';
+      $('#f-count').textContent = form.ids.length ? t('a.n_sel', { n: form.ids.length }) : t('a.pick_ex');
       const sum = form.ids.reduce((s, id) => s + chById(id).minutes, 0);
       if (!form.minutesTouched) $('#f-min').value = sum || 20;
-      $('#f-summary').textContent = form.ids.length ? `${form.ids.length} ejercicio(s) · ${$('#f-min').value} min · ${LANG[form.lang]}` : '';
+      $('#f-summary').textContent = form.ids.length ? t('a.summary', { n: form.ids.length, m: $('#f-min').value, lang: LANG[form.lang] }) : '';
     };
     $$('#new-form .seg button').forEach((b) => b.onclick = () => {
       form[b.dataset.k] = b.dataset.v;
@@ -204,7 +208,7 @@
       updateHelp(); updateSel();
     });
     $$('#catalog input').forEach((box) => box.onchange = () => {
-      if ($$('#catalog input:checked').length > 6) { box.checked = false; toast('Máximo 6 ejercicios por candidato'); }
+      if ($$('#catalog input:checked').length > 6) { box.checked = false; toast(t('a.max6')); }
       updateSel();
     });
     $$('[data-preview]').forEach((b) => b.onclick = (e) => { e.preventDefault(); previewModal(b.dataset.preview); });
@@ -219,16 +223,16 @@
 
     $('#new-form').onsubmit = async (e) => {
       e.preventDefault();
-      if (!form.ids.length) return toast('Selecciona al menos un ejercicio');
+      if (!form.ids.length) return toast(t('a.need_ex'));
       let opensAt;
       if (form.activation === 'scheduled') {
-        if (!$('#f-date').value) return toast('Elige fecha y hora');
+        if (!$('#f-date').value) return toast(t('a.need_dt'));
         opensAt = zonedToUtc($('#f-date').value, form.tz);
-        if (opensAt <= Date.now()) return toast('La fecha debe ser en el futuro');
+        if (opensAt <= Date.now()) return toast(t('a.future'));
       }
       try {
         const c = await api('/api/admin/candidates', { method: 'POST', body: JSON.stringify({
-          name: $('#f-name').value, email: $('#f-email').value.trim() || undefined, lang: form.lang, theme: form.theme,
+          name: $('#f-name').value, email: $('#f-email').value.trim() || undefined, lang: form.lang, theme: form.theme, ui: form.ui,
           challenges: form.ids, minutes: $('#f-min').value, activation: form.activation, opensAt, tz: form.tz,
         }) });
         cands.set(c.id, c); remember(c); renderList();
@@ -243,18 +247,18 @@
     $('#new-page').innerHTML = `
       <div class="card"><div class="card-b" style="padding:24px">
         <div class="success-ico">${icon('check')}</div>
-        <h2 style="font-size:20px;margin:14px 0 4px">Link listo para ${esc(c.name)}</h2>
-        <p class="muted" style="margin:0 0 18px">${esc(label)}${c.opensAt ? ` · se abre ${esc(shortDate(c.opensAt, c.tz))} (${esc(tzLabel(c.tz))})` : ''} · ${idsOf(c).length} ejercicio(s) · ${c.minutes} min</p>
-        <label>Link de acceso</label>
-        <div class="share"><input readonly value="${esc(linkOf(c))}" id="new-url"><button class="btn" id="cp">${icon('copy')} Copiar</button></div>
+        <h2 style="font-size:20px;margin:14px 0 4px">${esc(t('a.ready_for', { name: c.name }))}</h2>
+        <p class="muted" style="margin:0 0 18px">${esc(label)}${c.opensAt ? ` · ${esc(t('a.opens', { date: shortDate(c.opensAt, c.tz) }))} (${esc(tzLabel(c.tz))})` : ''} · ${t('a.n_ex', { n: idsOf(c).length })} · ${c.minutes} min · ${UI_LANG_NAME[c.ui || 'es']}</p>
+        <label>${t('a.link')}</label>
+        <div class="share"><input readonly value="${esc(linkOf(c))}" id="new-url"><button class="btn" id="cp">${icon('copy')} ${t('copy')}</button></div>
         <div style="display:flex;gap:8px;margin-top:16px;flex-wrap:wrap">
-          <button class="btn primary" id="em">${icon('mail')} Enviar por correo</button>
-          <button class="btn" id="vw">${icon('eye')} Ver candidato</button>
+          <button class="btn primary" id="em">${icon('mail')} ${t('a.send_email')}</button>
+          <button class="btn" id="vw">${icon('eye')} ${t('a.view_cand')}</button>
           <div class="spacer"></div>
-          <button class="btn ghost" id="again">${icon('plus')} Crear otro</button>
+          <button class="btn ghost" id="again">${icon('plus')} ${t('a.again')}</button>
         </div>
       </div></div>`;
-    $('#cp').onclick = () => { navigator.clipboard.writeText(linkOf(c)); toast('Link copiado'); };
+    $('#cp').onclick = () => { navigator.clipboard.writeText(linkOf(c)); toast(t('a.copied')); };
     $('#em').onclick = () => emailModal(c.id);
     $('#vw').onclick = () => { go('cands'); select(c.id); };
     $('#again').onclick = () => renderNewForm();
@@ -264,44 +268,43 @@
   // Catálogo
   // =====================================================================
   function previewHtml(c, lang) {
-    const rows = c.tests.map((t, i) => `<tr><td style="width:56px">${i + 1}${t.hidden ? ' <span class="tag">oculto</span>' : ''}</td><td>${esc(signature(lang, c.fn[lang], t.args))}</td><td>${esc(json(t.expected, lang))}</td></tr>`).join('');
+    const rows = c.tests.map((tc, i) => `<tr><td style="width:56px">${i + 1}${tc.hidden ? ` <span class="tag">${t('hidden')}</span>` : ''}</td><td>${esc(signature(lang, c.fn[lang], tc.args))}</td><td>${esc(json(tc.expected, lang))}</td></tr>`).join('');
     return `
-      <div style="display:flex;gap:6px;flex-wrap:wrap"><span class="tag">${esc(c.difficulty)}</span><span class="tag">${esc(c.topic || '')}</span><span class="tag">${c.minutes} min sugeridos</span></div>
-      <h2>${esc(c.title)}</h2>
-      <div class="section-title">Instrucciones (lo que verá el candidato)</div>
-      <p class="desc">${md(c.description)}</p>
-      <div class="section-title">Código inicial</div>
-      <div class="grid2"><div><span class="label faint">Python</span><pre class="code">${esc(c.starter.python)}</pre></div><div><span class="label faint">JavaScript</span><pre class="code">${esc(c.starter.javascript)}</pre></div></div>
-      <div class="section-title">Casos de prueba · ${c.tests.filter((t) => !t.hidden).length} visibles, ${c.tests.filter((t) => t.hidden).length} ocultos (${LANG[lang]})</div>
-      <table class="tbl"><thead><tr><th>#</th><th>Entrada</th><th>Esperado</th></tr></thead><tbody>${rows}</tbody></table>
-      <p class="faint" style="font-size:12px;margin-top:8px">Los casos ocultos solo los ves tú; el candidato ve únicamente los visibles.</p>`;
+      <div style="display:flex;gap:6px;flex-wrap:wrap"><span class="tag">${esc(diff(c.difficulty))}</span><span class="tag">${esc(exText(c, 'topic') || '')}</span><span class="tag">${t('a.suggested', { n: c.minutes })}</span></div>
+      <h2>${esc(exText(c, 'title'))}</h2>
+      <div class="section-title">${t('a.instr_cand')}</div>
+      <p class="desc">${md(exText(c, 'description'))}</p>
+      <div class="section-title">${t('a.starter')}</div>
+      <div class="grid2"><div><span class="label faint">Python</span><pre class="code">${esc(starter(c.starter.python))}</pre></div><div><span class="label faint">JavaScript</span><pre class="code">${esc(starter(c.starter.javascript))}</pre></div></div>
+      <div class="section-title">${t('a.cases_h', { v: c.tests.filter((x) => !x.hidden).length, h: c.tests.filter((x) => x.hidden).length, lang: LANG[lang] })}</div>
+      <table class="tbl"><thead><tr><th>#</th><th>${t('a.th.input')}</th><th>${t('a.th.expected')}</th></tr></thead><tbody>${rows}</tbody></table>
+      <p class="faint" style="font-size:12px;margin-top:8px">${t('a.hidden_note')}</p>`;
   }
   function previewModal(id) {
     const c = chById(id);
     const inForm = () => form.ids.includes(id);
-    const m = modal({ title: 'Vista previa', body: `<div class="preview">${previewHtml(c, form.lang)}</div>`,
-      footer: `<div class="spacer"></div><button class="btn" data-no>Cerrar</button><button class="btn primary" id="pv-add">${inForm() ? 'Quitar de la evaluación' : 'Agregar a la evaluación'}</button>` });
+    const m = modal({ title: t('a.preview'), body: `<div class="preview">${previewHtml(c, form.lang)}</div>`,
+      footer: `<div class="spacer"></div><button class="btn" data-no>${t('close')}</button><button class="btn primary" id="pv-add">${inForm() ? t('a.remove_ev') : t('a.add_ev')}</button>` });
     m.el.querySelector('[data-no]').onclick = m.close;
     $('#pv-add').onclick = () => {
       const box = $(`#catalog input[value="${id}"]`);
-      if (!box.checked && form.ids.length >= 6) return toast('Máximo 6 ejercicios por candidato');
+      if (!box.checked && form.ids.length >= 6) return toast(t('a.max6'));
       box.checked = !box.checked; box.onchange(); m.close();
     };
   }
   let catSel = null, catLang = 'python';
   function renderCatalogView() {
-    $('#cat-count').textContent = `${challenges.length} ejercicios`;
-    const groups = ['Fácil', 'Media', 'Difícil'];
-    $('#cat-list').innerHTML = groups.map((g) => `<div class="cat-group">${g}</div>` + challenges.filter((c) => c.difficulty === g).map((c) => `
-      <div class="row ${catSel === c.id ? 'on' : ''}" data-id="${c.id}"><div class="l1"><span class="name">${esc(c.title)}</span><span class="faint mono" style="font-size:12px">${c.minutes} min</span></div>
-      <div class="l2">${esc(c.topic || '')}<span class="dot-sep">${c.tests.length} casos</span></div></div>`).join('')).join('');
+    $('#cat-count').textContent = t('a.cat.count', { n: challenges.length });
+    $('#cat-list').innerHTML = GROUPS.map((g) => `<div class="cat-group">${diff(g)}</div>` + challenges.filter((c) => c.difficulty === g).map((c) => `
+      <div class="row ${catSel === c.id ? 'on' : ''}" data-id="${c.id}"><div class="l1"><span class="name">${esc(exText(c, 'title'))}</span><span class="faint mono" style="font-size:12px">${c.minutes} min</span></div>
+      <div class="l2">${esc(exText(c, 'topic') || '')}<span class="dot-sep">${t('a.n_cases', { n: c.tests.length })}</span></div></div>`).join('')).join('');
     $$('#cat-list .row').forEach((r) => r.onclick = () => { catSel = r.dataset.id; renderCatalogView(); });
     const c = chById(catSel);
     $('#cat-detail').innerHTML = c ? `<div class="preview">
         <div class="seg" style="float:right">${['python', 'javascript'].map((l) => `<button data-l="${l}" class="${catLang === l ? 'on' : ''}">${LANG[l]}</button>`).join('')}</div>
         ${previewHtml(c, catLang)}
-        <button class="btn primary" style="margin-top:16px" id="cat-use">${icon('plus')} Usar en un candidato nuevo</button></div>`
-      : `<div class="empty-state"><div class="ico">${icon('book')}</div><h3>Catálogo</h3>Elige un ejercicio para ver sus instrucciones, el código inicial y todos sus casos de prueba.</div>`;
+        <button class="btn primary" style="margin-top:16px" id="cat-use">${icon('plus')} ${t('a.use_new')}</button></div>`
+      : `<div class="empty-state"><div class="ico">${icon('book')}</div><h3>${t('a.nav.catalog')}</h3>${t('a.cat.empty')}</div>`;
     $$('#cat-detail .seg button').forEach((b) => b.onclick = () => { catLang = b.dataset.l; renderCatalogView(); });
     if (c) $('#cat-use').onclick = () => { if (!form.ids.includes(c.id) && form.ids.length < 6) form.ids.push(c.id); form.lang = catLang; go('new'); };
   }
@@ -319,30 +322,30 @@
       const ids = idsOf(c), res = c.results || {};
       const passed = ids.reduce((s, id) => s + (res[id] ? res[id].passed : 0), 0);
       const total = ids.reduce((s, id) => s + (res[id] ? res[id].total : 0), 0);
-      const label = ids.length === 1 ? (chById(ids[0]) || {}).title : `${ids.length} ejercicios`;
-      const extra = isTyping(c) ? '<span class="typing">escribiendo</span>'
-        : isLocked(c) && c.opensAt ? `<span>abre ${esc(shortDate(c.opensAt))}</span>`
+      const label = ids.length === 1 ? title(ids[0]) : t('c.n_ex', { n: ids.length });
+      const extra = isTyping(c) ? `<span class="typing">${t('a.typing')}</span>`
+        : isLocked(c) && c.opensAt ? `<span>${esc(t('a.opens_short', { date: shortDate(c.opensAt) }))}</span>`
         : c.status === 'in_progress' && c.startedAt ? `<span class="mono">${fmtTime(deadlineOf(c) - Date.now())}</span>`
         : total ? `<span class="mono">${passed}/${total}</span>` : `<span>${ago(c.createdAt)}</span>`;
       return `<div class="row ${c.id === selected ? 'on' : ''}" data-id="${c.id}">
         <div class="l1"><span class="name">${esc(c.name)}</span>${statusHtml(c)}</div>
         <div class="l2"><span>${esc(label || '')}</span><span class="dot-sep">${LANG[c.lang]}</span><span class="dot-sep"></span>${extra}</div></div>`;
-    }).join('') : `<div class="empty">${all.length ? 'Nada en este filtro.' : 'Aún no hay candidatos.'}</div>`;
+    }).join('') : `<div class="empty">${all.length ? t('a.list.filter') : t('a.list.none')}</div>`;
     if ($('#cand-list').dataset.html !== html) { $('#cand-list').dataset.html = html; $('#cand-list').innerHTML = html; $$('#cand-list .row').forEach((el) => el.onclick = () => select(el.dataset.id)); }
     const lockedN = all.filter(isLocked).length;
     const bulk = $('#btn-activate-all');
     bulk.classList.toggle('hidden', !lockedN);
-    bulk.innerHTML = `${icon('unlock')} Activar ${lockedN === 1 ? '1 preparado' : `${lockedN} preparados`}`;
+    bulk.innerHTML = `${icon('unlock')} ${t('a.activate_n', { n: lockedN })}`;
   }
   $('#btn-activate-all').onclick = async () => {
     const n = [...cands.values()].filter(isLocked).length;
-    if (!await confirmBox(`¿Activar ${n} link(s)?`, 'Los candidatos con links preparados o programados podrán empezar en cuanto los abran.', 'Activar')) return;
-    try { const { activated } = await api('/api/admin/activate-all', { method: 'POST' }); toast(`${activated} link(s) activados`); } catch (e) { fail(e); }
+    if (!await confirmBox(t('a.activate_q', { n }), t('a.activate_d'), t('a.activate'))) return;
+    try { const { activated } = await api('/api/admin/activate-all', { method: 'POST' }); toast(t('a.activated_n', { n: activated })); } catch (e) { fail(e); }
   };
 
   function renderEmptyDetail() {
-    $('#detail').innerHTML = `<div class="empty-state"><div class="ico">${icon('users')}</div><h3>Ningún candidato seleccionado</h3>
-      Elige uno de la lista para ver su código en tiempo real, o crea uno nuevo.<div style="margin-top:16px"><button class="btn primary" data-goto="new">${icon('plus')} Nuevo candidato</button></div></div>`;
+    $('#detail').innerHTML = `<div class="empty-state"><div class="ico">${icon('users')}</div><h3>${t('a.empty.h')}</h3>
+      ${t('a.empty.d')}<div style="margin-top:16px"><button class="btn primary" data-goto="new">${icon('plus')} ${t('a.nav.new')}</button></div></div>`;
   }
 
   // =====================================================================
@@ -362,7 +365,7 @@
     $('#detail').innerHTML = `
       <div class="d-head">
         <div class="t"><h2>${esc(c.name)}</h2><span id="d-status"></span><span id="d-typing"></span></div>
-        <div class="meta">${LANG[c.lang]}<span class="dot-sep">${c.minutes} min</span><span class="dot-sep">${idsOf(c).length} ejercicio(s)</span>${c.email ? `<span class="dot-sep">${esc(c.email)}</span>` : ''}</div>
+        <div class="meta">${LANG[c.lang]}<span class="dot-sep">${c.minutes} min</span><span class="dot-sep">${t('a.n_ex', { n: idsOf(c).length })}</span><span class="dot-sep">${UI_LANG_NAME[c.ui || 'es']}</span>${c.email ? `<span class="dot-sep">${esc(c.email)}</span>` : ''}</div>
         <div class="d-actions" id="d-actions"></div>
       </div>
       <div id="d-notice"></div>
@@ -372,27 +375,28 @@
         <div class="d-code">
           <div class="subbar">
             <b style="font-weight:500" id="d-extitle"></b>
-            <label style="margin:0 0 0 6px;display:flex;gap:6px;align-items:center;font-weight:400;color:var(--muted)"><input type="checkbox" id="d-follow" ${follow ? 'checked' : ''}> Seguir al candidato</label>
+            <label style="margin:0 0 0 6px;display:flex;gap:6px;align-items:center;font-weight:400;color:var(--muted)"><input type="checkbox" id="d-follow" ${follow ? 'checked' : ''}> ${t('a.follow')}</label>
             <div class="spacer"></div>
-            <button class="btn sm" id="d-run">${icon('play')} Correr todos los tests</button>
+            <button class="btn sm" id="d-run">${icon('play')} ${t('a.run_all')}</button>
           </div>
           <div id="d-banner"></div>
           <div class="editor-wrap" style="min-height:320px"><textarea id="d-code"></textarea></div>
           <div class="results" style="height:auto;max-height:320px">
-            <div class="tabs"><button class="tab on">Resultados (incluye casos ocultos)</button><span class="summary" id="d-summary"></span></div>
+            <div class="tabs"><button class="tab on">${t('a.results_all')}</button><span class="summary" id="d-summary"></span></div>
             <div class="results-body" id="d-results"></div>
           </div>
         </div>
         <div class="d-side">
-          <div class="section-title">Instrucciones</div>
+          <div class="section-title">${t('c.instructions')}</div>
           <p id="d-desc" style="margin:0;line-height:1.6"></p>
-          <div class="section-title">${icon('history').replace('<svg', '<svg style="width:13px;height:13px"')} Versiones del candidato</div>
+          <div class="section-title">${icon('history').replace('<svg', '<svg style="width:13px;height:13px"')} ${t('a.cand_versions')}</div>
           <div class="vlist" id="d-versions"></div>
-          <div class="section-title">Actividad</div>
+          <div class="section-title">${t('a.activity')}</div>
           <ul class="timeline" id="d-timeline"></ul>
         </div>
       </div>`;
-    viewer = CodeMirror.fromTextArea($('#d-code'), { mode: c.lang === 'python' ? 'python' : 'javascript', lineNumbers: true, readOnly: true });    $('#d-follow').onchange = (e) => { follow = e.target.checked; if (follow && c.active) showExercise(c.active); };
+    viewer = CodeMirror.fromTextArea($('#d-code'), { mode: c.lang === 'python' ? 'python' : 'javascript', lineNumbers: true, readOnly: true });
+    $('#d-follow').onchange = (e) => { follow = e.target.checked; if (follow && c.active) showExercise(c.active); };
     $('#d-run').onclick = runHidden;
     renderHeadState(); showExercise(viewEx); renderStats(); renderTimeline();
   }
@@ -401,26 +405,26 @@
   function renderHeadState() {
     const c = detailCache; if (!c || !$('#d-actions')) return;
     $('#d-status').innerHTML = statusHtml(c);
-    $('#d-typing').innerHTML = isTyping(c) ? '<span class="typing">escribiendo…</span>' : '';
+    $('#d-typing').innerHTML = isTyping(c) ? `<span class="typing">${t('a.typing2')}</span>` : '';
     const pending = c.status === 'pending';
     const locked = isLocked(c);
     const acts = [
-      pending && locked ? `<button class="btn sm primary" data-a="unlock">${icon('unlock')} Activar ahora</button>` : '',
-      pending && !locked ? `<button class="btn sm" data-a="lock">${icon('lock')} Bloquear</button>` : '',
-      pending ? `<button class="btn sm" data-a="schedule">${icon('calendar')} ${c.opensAt && locked ? 'Cambiar fecha' : 'Programar'}</button>` : '',
-      ['submitted', 'expired'].includes(c.status) ? `<button class="btn sm primary" data-a="time">${icon('rotate')} Reabrir</button>` : '',
-      c.status === 'in_progress' ? `<button class="btn sm" data-a="time">${icon('clock')} Agregar tiempo</button>` : '',
-      `<button class="btn sm" data-a="email">${icon('mail')} Enviar correo</button>`,
-      `<button class="btn sm" data-a="copy">${icon('copy')} Copiar link</button>`,
+      pending && locked ? `<button class="btn sm primary" data-a="unlock">${icon('unlock')} ${t('a.b.unlock')}</button>` : '',
+      pending && !locked ? `<button class="btn sm" data-a="lock">${icon('lock')} ${t('a.b.lock')}</button>` : '',
+      pending ? `<button class="btn sm" data-a="schedule">${icon('calendar')} ${c.opensAt && locked ? t('a.b.change_date') : t('a.b.schedule')}</button>` : '',
+      ['submitted', 'expired'].includes(c.status) ? `<button class="btn sm primary" data-a="time">${icon('rotate')} ${t('a.b.reopen')}</button>` : '',
+      c.status === 'in_progress' ? `<button class="btn sm" data-a="time">${icon('clock')} ${t('a.b.add_time')}</button>` : '',
+      `<button class="btn sm" data-a="email">${icon('mail')} ${t('a.b.email')}</button>`,
+      `<button class="btn sm" data-a="copy">${icon('copy')} ${t('a.b.copy')}</button>`,
       '<div class="spacer"></div>',
-      `<button class="btn sm ghost danger" data-a="revoke">${icon('trash')} Revocar</button>`,
+      `<button class="btn sm ghost danger" data-a="revoke">${icon('trash')} ${t('a.b.revoke')}</button>`,
     ].join('');
     let notice = '';
-    if (locked && c.opensAt) notice = `${icon('calendar')}<span>Se abre el <b style="font-weight:500">${esc(fmtIn(c.opensAt, c.tz))}</b> (${esc(tzLabel(c.tz))})${c.tz !== localTz() ? ` · ${esc(shortDate(c.opensAt))} en tu hora` : ''}</span><span class="spacer"></span><span class="faint mono">en ${fmtCountdown(c.opensAt - Date.now())}</span>`;
-    else if (locked) notice = `${icon('lock')}<span>Link bloqueado: si el candidato lo abre verá “aún no inicia tu prueba”.</span>`;
-    else if (pending) notice = `${icon('unlock')}<span>Link activo: el candidato puede empezar cuando lo abra.</span>`;
-    else if (c.status === 'expired') notice = `${icon('clock')}<span>Se le acabó el tiempo. Se conservó lo último que guardó a tiempo. Puedes reabrir la evaluación para darle más minutos.</span>`;
-    else if (c.status === 'submitted') notice = `${icon('check')}<span>Envió su evaluación${c.submittedAt ? ` a las ${hhmm(c.submittedAt)}` : ''}. Puedes reabrirla si necesitas que continúe.</span>`;
+    if (locked && c.opensAt) notice = `${icon('calendar')}<span>${t('a.n.sched', { date: esc(fmtIn(c.opensAt, c.tz)), tz: esc(tzLabel(c.tz)) })}${c.tz !== localTz() ? esc(t('a.n.sched_mine', { date: shortDate(c.opensAt) })) : ''}</span><span class="spacer"></span><span class="faint mono">${t('a.n.in', { t: fmtCountdown(c.opensAt - Date.now()) })}</span>`;
+    else if (locked) notice = `${icon('lock')}<span>${t('a.n.locked')}</span>`;
+    else if (pending) notice = `${icon('unlock')}<span>${t('a.n.open')}</span>`;
+    else if (c.status === 'expired') notice = `${icon('clock')}<span>${t('a.n.expired')}</span>`;
+    else if (c.status === 'submitted') notice = `${icon('check')}<span>${t('a.n.submitted', { at: c.submittedAt ? t('a.n.at', { t: hhmm(c.submittedAt) }) : '' })}</span>`;
     const key = acts + notice;
     if ($('#d-actions').dataset.key === key) return;
     $('#d-actions').dataset.key = key;
@@ -432,14 +436,14 @@
   async function action(a) {
     const c = detailCache;
     try {
-      if (a === 'unlock') { await api(`/api/admin/candidates/${c.id}/activate`, { method: 'POST' }); toast('Link activado'); }
-      if (a === 'lock') { await api(`/api/admin/candidates/${c.id}/deactivate`, { method: 'POST' }); toast('Link bloqueado'); }
+      if (a === 'unlock') { await api(`/api/admin/candidates/${c.id}/activate`, { method: 'POST' }); toast(t('a.t.unlocked')); }
+      if (a === 'lock') { await api(`/api/admin/candidates/${c.id}/deactivate`, { method: 'POST' }); toast(t('a.t.locked')); }
       if (a === 'schedule') scheduleModal(c);
       if (a === 'time') timeModal(c);
       if (a === 'email') emailModal(c.id);
-      if (a === 'copy') { await navigator.clipboard.writeText(linkOf(c)); toast('Link copiado'); }
+      if (a === 'copy') { await navigator.clipboard.writeText(linkOf(c)); toast(t('a.copied')); }
       if (a === 'revoke') {
-        if (!await confirmBox(`¿Revocar a ${esc(c.name)}?`, 'Se borra su información y el link deja de funcionar. Esta acción no se puede deshacer.', 'Revocar', true)) return;
+        if (!await confirmBox(esc(t('a.revoke_q', { name: c.name })), t('a.revoke_d'), t('a.b.revoke'), true)) return;
         await api('/api/admin/candidates/' + c.id, { method: 'DELETE' });
       }
     } catch (e) { fail(e); }
@@ -449,19 +453,17 @@
   function timeModal(c) {
     const reopen = c.status !== 'in_progress';
     let mins = 10;
-    const m = modal({ title: reopen ? `Reabrir evaluación de ${esc(c.name)}` : `Agregar tiempo a ${esc(c.name)}`, size: 'sm', body: `<div style="padding:16px 18px">
-        <p class="muted" style="margin:0 0 14px;line-height:1.6">${reopen
-          ? 'El candidato podrá seguir editando su código desde donde se quedó. Si tiene la página abierta, se reactiva sola.'
-          : 'Se suma a su tiempo restante. El candidato lo ve al momento en su cronómetro.'}</p>
-        <span class="label">Minutos ${reopen ? 'disponibles' : 'extra'}</span>
+    const m = modal({ title: esc(t(reopen ? 'a.reopen_t' : 'a.addtime_t', { name: c.name })), size: 'sm', body: `<div style="padding:16px 18px">
+        <p class="muted" style="margin:0 0 14px;line-height:1.6">${t(reopen ? 'a.reopen_d' : 'a.addtime_d')}</p>
+        <span class="label">${t(reopen ? 'a.mins_avail' : 'a.mins_extra')}</span>
         <div class="seg full" id="t-quick">${[5, 10, 15, 30].map((n) => `<button type="button" data-n="${n}" class="${n === mins ? 'on' : ''}">${n} min</button>`).join('')}</div>
         <input id="t-min" type="number" min="1" max="240" value="${mins}" style="margin-top:10px">
         <div class="hint" id="t-prev"></div></div>`,
-      footer: `<div class="spacer"></div><button class="btn" data-no>Cancelar</button><button class="btn primary" id="t-ok">${icon(reopen ? 'rotate' : 'clock')} ${reopen ? 'Reabrir' : 'Agregar'}</button>` });
+      footer: `<div class="spacer"></div><button class="btn" data-no>${t('cancel')}</button><button class="btn primary" id="t-ok">${icon(reopen ? 'rotate' : 'clock')} ${t(reopen ? 'a.b.reopen' : 'a.add')}</button>` });
     const prev = () => {
       mins = Math.max(1, Math.min(240, parseInt($('#t-min').value, 10) || 0));
       const base = reopen ? Date.now() : Math.max(deadlineOf(c), Date.now());
-      $('#t-prev').textContent = `Terminará a las ${hhmm(base + mins * 60000)} (tu hora).`;
+      $('#t-prev').textContent = t('a.ends_at', { t: hhmm(base + mins * 60000) });
       $$('#t-quick button').forEach((b) => b.classList.toggle('on', Number(b.dataset.n) === mins));
     };
     $$('#t-quick button').forEach((b) => b.onclick = () => { $('#t-min').value = b.dataset.n; prev(); });
@@ -470,33 +472,33 @@
     $('#t-ok').onclick = async () => {
       try {
         await api(`/api/admin/candidates/${c.id}/time`, { method: 'POST', body: JSON.stringify({ minutes: mins }) });
-        m.close(); toast(reopen ? `Evaluación reabierta por ${mins} min` : `+${mins} min para ${c.name}`);
+        m.close(); toast(reopen ? t('a.reopened_t', { n: mins }) : t('a.added_t', { n: mins, name: c.name }));
       } catch (e) { fail(e); }
     };
   }
 
   function scheduleModal(c) {
     let tz = c.tz && c.tz !== 'UTC' ? c.tz : localTz();
-    const start = c.opensAt && c.opensAt > Date.now() ? c.opensAt : zonedToUtc(utcToZonedInput(Date.now() + 864e5, tz).slice(0, 10) + 'T10:00', tz);
-    const m = modal({ title: 'Programar activación', size: 'sm', body: `<div style="padding:16px 18px">
-        <label for="s-date">Fecha y hora</label><input id="s-date" type="datetime-local" value="${utcToZonedInput(start, tz)}">
-        <label for="s-tz" style="margin-top:12px">Zona horaria de esa hora</label><select id="s-tz">${tzOptions(tz)}</select>
+    const begin = c.opensAt && c.opensAt > Date.now() ? c.opensAt : zonedToUtc(utcToZonedInput(Date.now() + 864e5, tz).slice(0, 10) + 'T10:00', tz);
+    const m = modal({ title: t('a.sched_t'), size: 'sm', body: `<div style="padding:16px 18px">
+        <label for="s-date">${t('a.datetime')}</label><input id="s-date" type="datetime-local" value="${utcToZonedInput(begin, tz)}">
+        <label for="s-tz" style="margin-top:12px">${t('a.tz_of')}</label><select id="s-tz">${tzOptions(tz)}</select>
         <div class="tz-preview" id="s-prev"></div></div>`,
-      footer: `${c.opensAt ? '<button class="btn ghost" id="s-clear">Quitar fecha</button>' : ''}<div class="spacer"></div><button class="btn" data-no>Cancelar</button><button class="btn primary" id="s-save">${icon('calendar')} Programar</button>` });
+      footer: `${c.opensAt ? `<button class="btn ghost" id="s-clear">${t('a.clear_date')}</button>` : ''}<div class="spacer"></div><button class="btn" data-no>${t('cancel')}</button><button class="btn primary" id="s-save">${icon('calendar')} ${t('a.b.schedule')}</button>` });
     const prev = () => {
       const v = $('#s-date').value; if (!v) return;
-      const t = zonedToUtc(v, tz), mine = localTz();
-      $('#s-prev').innerHTML = [`<b>${esc(fmtIn(t, tz))}</b> en ${esc(tzLabel(tz))}`, mine !== tz ? `${esc(fmtIn(t, mine))} en tu hora` : '', `${esc(fmtIn(t, 'UTC'))} UTC`,
-        t <= Date.now() ? '<span style="color:var(--red)">Esa hora ya pasó.</span>' : 'El link queda bloqueado hasta esa hora.'].filter(Boolean).join('<br>');
+      const at = zonedToUtc(v, tz), mine = localTz();
+      $('#s-prev').innerHTML = [t('a.in_tz', { date: `<b>${esc(fmtIn(at, tz))}</b>`, tz: esc(tzLabel(tz)) }), mine !== tz ? esc(t('a.in_mine2', { date: fmtIn(at, mine) })) : '', `${esc(fmtIn(at, 'UTC'))} UTC`,
+        at <= Date.now() ? `<span style="color:var(--red)">${t('a.past')}</span>` : t('a.locked_until')].filter(Boolean).join('<br>');
     };
     $('#s-date').oninput = prev; $('#s-tz').onchange = (e) => { tz = e.target.value; prev(); }; prev();
     m.el.querySelector('[data-no]').onclick = m.close;
     $('#s-save').onclick = async () => {
-      try { await api(`/api/admin/candidates/${c.id}/schedule`, { method: 'POST', body: JSON.stringify({ opensAt: zonedToUtc($('#s-date').value, tz), tz }) }); m.close(); toast('Activación programada'); }
+      try { await api(`/api/admin/candidates/${c.id}/schedule`, { method: 'POST', body: JSON.stringify({ opensAt: zonedToUtc($('#s-date').value, tz), tz }) }); m.close(); toast(t('a.sched_ok')); }
       catch (e) { fail(e); }
     };
     if ($('#s-clear')) $('#s-clear').onclick = async () => {
-      try { await api(`/api/admin/candidates/${c.id}/schedule`, { method: 'POST', body: JSON.stringify({ opensAt: null }) }); m.close(); toast('Fecha quitada: el link queda bloqueado'); }
+      try { await api(`/api/admin/candidates/${c.id}/schedule`, { method: 'POST', body: JSON.stringify({ opensAt: null }) }); m.close(); toast(t('a.sched_cleared')); }
       catch (e) { fail(e); }
     };
   }
@@ -505,20 +507,20 @@
     const c = cands.get(id) || detailCache;
     let msg;
     try { msg = await api(`/api/admin/candidates/${id}/email`, { method: 'POST', body: JSON.stringify({ link: linkOf(c) }) }); } catch (e) { return fail(e); }
-    const m = modal({ title: 'Enviar link por correo', size: '', body: `<div style="padding:16px 18px;max-width:640px">
-        <label for="e-to">Para</label><input id="e-to" type="email" placeholder="correo@candidato.com" value="${esc(msg.to || '')}">
-        <label for="e-sub" style="margin-top:12px">Asunto</label><input id="e-sub" value="${esc(msg.subject)}">
-        <label for="e-body" style="margin-top:12px">Mensaje</label><textarea id="e-body" rows="13" style="font:12.5px/1.6 var(--mono)">${esc(msg.text)}</textarea>
-        <div class="hint">${mailConfigured ? 'Se enviará desde el servidor de Alcor.' : 'Se abrirá tu aplicación de correo con el mensaje listo. Para enviar directo desde Alcor, configura RESEND_API_KEY en Render.'}</div></div>`,
-      footer: `<button class="btn" id="e-copy">${icon('copy')} Copiar mensaje</button><div class="spacer"></div><button class="btn" data-no>Cancelar</button>
-        ${mailConfigured ? `<button class="btn" id="e-mailto">${icon('mail')} Abrir en mi correo</button><button class="btn primary" id="e-send">${icon('send')} Enviar</button>` : `<button class="btn primary" id="e-mailto">${icon('mail')} Abrir en mi correo</button>`}` });
+    const m = modal({ title: t('a.mail_t'), size: '', body: `<div style="padding:16px 18px;max-width:640px">
+        <label for="e-to">${t('a.to')}</label><input id="e-to" type="email" placeholder="${t('a.to.ph')}" value="${esc(msg.to || '')}">
+        <label for="e-sub" style="margin-top:12px">${t('a.subject')}</label><input id="e-sub" value="${esc(msg.subject)}">
+        <label for="e-body" style="margin-top:12px">${t('a.message')}</label><textarea id="e-body" rows="13" style="font:12.5px/1.6 var(--mono)">${esc(msg.text)}</textarea>
+        <div class="hint">${mailConfigured ? t('a.mail_server') : t('a.mail_client')}</div></div>`,
+      footer: `<button class="btn" id="e-copy">${icon('copy')} ${t('a.copy_msg')}</button><div class="spacer"></div><button class="btn" data-no>${t('cancel')}</button>
+        ${mailConfigured ? `<button class="btn" id="e-mailto">${icon('mail')} ${t('a.open_mail')}</button><button class="btn primary" id="e-send">${icon('send')} ${t('a.send')}</button>` : `<button class="btn primary" id="e-mailto">${icon('mail')} ${t('a.open_mail')}</button>`}` });
     m.el.querySelector('[data-no]').onclick = m.close;
     const saveTo = async () => {
       const to = $('#e-to').value.trim();
       if (to && to !== msg.to) await api(`/api/admin/candidates/${id}/email`, { method: 'POST', body: JSON.stringify({ to, link: linkOf(c) }) });
       return to;
     };
-    $('#e-copy').onclick = () => { navigator.clipboard.writeText(`${$('#e-sub').value}\n\n${$('#e-body').value}`); toast('Mensaje copiado'); };
+    $('#e-copy').onclick = () => { navigator.clipboard.writeText(`${$('#e-sub').value}\n\n${$('#e-body').value}`); toast(t('a.msg_copied')); };
     $('#e-mailto').onclick = async () => {
       try {
         const to = await saveTo();
@@ -528,10 +530,10 @@
     };
     if ($('#e-send')) $('#e-send').onclick = async () => {
       try {
-        const to = await saveTo(); if (!to) return toast('Escribe el correo del candidato');
+        const to = await saveTo(); if (!to) return toast(t('a.need_to'));
         $('#e-send').disabled = true;
         await api(`/api/admin/candidates/${id}/email`, { method: 'POST', body: JSON.stringify({ send: true, link: linkOf(c) }) });
-        m.close(); toast(`Correo enviado a ${to}`);
+        m.close(); toast(t('a.mail_sent', { to }));
       } catch (e) { $('#e-send').disabled = false; fail(e); }
     };
   }
@@ -543,7 +545,7 @@
     $('#d-pills').innerHTML = ids.map((id, i) => {
       const r = (c.results || {})[id];
       const here = c.active === id && c.status === 'in_progress';
-      return `<button class="pill ${id === viewEx ? 'on' : ''}" data-id="${id}">${i + 1}. ${esc(chById(id).title)}${r ? ` <span class="r">${r.passed}/${r.total}</span>` : ''}${here ? ' <span class="status live" title="El candidato está aquí"></span>' : ''}</button>`;
+      return `<button class="pill ${id === viewEx ? 'on' : ''}" data-id="${id}">${i + 1}. ${esc(title(id))}${r ? ` <span class="r">${r.passed}/${r.total}</span>` : ''}${here ? ` <span class="status live" title="${t('a.cand_here')}"></span>` : ''}</button>`;
     }).join('');
     $$('#d-pills .pill').forEach((b) => b.onclick = () => { follow = false; $('#d-follow').checked = false; showExercise(b.dataset.id); });
   }
@@ -551,43 +553,45 @@
   function currentCode() {
     const c = detailCache, ch = chById(viewEx);
     if (viewingVersion) return viewingVersion.code;
-    return c.code && typeof c.code[viewEx] === 'string' ? c.code[viewEx] : (c.status === 'pending' ? '' : ch.starter[c.lang]);
+    return c.code && typeof c.code[viewEx] === 'string' ? c.code[viewEx] : (c.status === 'pending' ? '' : starter(ch.starter[c.lang]));
   }
   function showExercise(id) {
     viewEx = id; viewingVersion = null;
     const ch = chById(id);
-    $('#d-extitle').textContent = ch.title;
-    $('#d-desc').innerHTML = md(ch.description);
+    $('#d-extitle').textContent = exText(ch, 'title');
+    $('#d-desc').innerHTML = md(exText(ch, 'description'));
     setViewer();
-    $('#d-results').innerHTML = '<div class="empty">Corre los tests para validar el código del candidato con todos los casos, incluidos los ocultos.</div>';
+    $('#d-results').innerHTML = `<div class="empty">${t('a.run_hint')}</div>`;
     $('#d-summary').innerHTML = '';
     renderPills(); renderVersions();
   }
   function setViewer() {
     const c = detailCache;
-    const code = currentCode() || (c.lang === 'python' ? '# El candidato aún no inicia' : '// El candidato aún no inicia');
+    const code = currentCode() || (c.lang === 'python' ? '# ' : '// ') + t('a.not_started');
     if (viewer.getValue() !== code) { const s = viewer.getScrollInfo(); viewer.setValue(code); viewer.scrollTo(s.left, s.top); }
     $('#d-banner').innerHTML = viewingVersion
-      ? `<div class="viewing-banner">${icon('history').replace('<svg', '<svg style="width:14px;height:14px"')}<span>Viendo versión “${esc(viewingVersion.label || 'sin nombre')}” · ${hhmm(viewingVersion.t)}</span><span class="spacer"></span><button class="btn sm" id="d-live">Volver a en vivo</button></div>` : '';
+      ? `<div class="viewing-banner">${icon('history').replace('<svg', '<svg style="width:14px;height:14px"')}<span>${esc(t('a.viewing', { label: versionLabel(viewingVersion), t: hhmm(viewingVersion.t) }))}</span><span class="spacer"></span><button class="btn sm" id="d-live">${t('a.back_live')}</button></div>` : '';
     if (viewingVersion) $('#d-live').onclick = () => { viewingVersion = null; setViewer(); renderVersions(); };
   }
+  // Las versiones automáticas se guardan como "Tests 3/5"; las mostramos traducidas.
+  const versionLabel = (v) => { const mt = /^Tests (\d+)\/(\d+)$/.exec(v.label || ''); return mt ? t('v.tests', { p: mt[1], t: mt[2] }) : v.label || t('no_name'); };
   function renderVersions() {
     const c = detailCache; if (!$('#d-versions')) return;
     const list = ((c.versions || {})[viewEx] || []).slice().reverse();
-    $('#d-versions').innerHTML = list.length ? list.map((v) => `<button class="vitem ${viewingVersion && viewingVersion.id === v.id ? 'on' : ''}" data-id="${v.id}">${icon(v.auto ? 'play' : 'save')}<span class="lab">${esc(v.label || 'Sin nombre')}</span><span class="when">${hhmm(v.t)}</span></button>`).join('')
-      : '<div class="faint" style="font-size:12.5px">Aún no guarda versiones de este ejercicio.</div>';
+    $('#d-versions').innerHTML = list.length ? list.map((v) => `<button class="vitem ${viewingVersion && viewingVersion.id === v.id ? 'on' : ''}" data-id="${v.id}">${icon(v.auto ? 'play' : 'save')}<span class="lab">${esc(versionLabel(v))}</span><span class="when">${hhmm(v.t)}</span></button>`).join('')
+      : `<div class="faint" style="font-size:12.5px">${t('a.no_versions')}</div>`;
     $$('#d-versions .vitem').forEach((b) => b.onclick = () => { follow = false; $('#d-follow').checked = false; viewingVersion = list.find((v) => v.id === b.dataset.id); setViewer(); renderVersions(); });
   }
 
   async function runHidden() {
     const c = detailCache, ch = chById(viewEx);
-    const btn = $('#d-run'); btn.disabled = true; btn.textContent = 'Ejecutando…';
+    const btn = $('#d-run'); btn.disabled = true; btn.textContent = t('running');
     try {
       const res = await AlcorRunner.run(c.lang, viewer.getValue(), ch.fn[c.lang], ch.tests);
       renderResults($('#d-results'), res, c.lang, ch.fn[c.lang]);
-      if (res.stdout) $('#d-results').insertAdjacentHTML('beforeend', `<div class="section-title">Salida</div><pre class="console">${esc(res.stdout)}</pre>`);
+      if (res.stdout) $('#d-results').insertAdjacentHTML('beforeend', `<div class="section-title">${t('a.output')}</div><pre class="console">${esc(res.stdout)}</pre>`);
       $('#d-summary').innerHTML = `<span class="tag ${res.passed === res.total ? 'ok' : 'bad'}">${res.passed}/${res.total} tests</span>`;
-    } finally { btn.disabled = false; btn.innerHTML = `${icon('play')} Correr todos los tests`; }
+    } finally { btn.disabled = false; btn.innerHTML = `${icon('play')} ${t('a.run_all')}`; }
   }
 
   function renderStats() {
@@ -599,23 +603,19 @@
     const left = c.startedAt && c.status === 'in_progress' ? deadlineOf(c) - Date.now() : null;
     const stat = (k, v) => `<div><div class="k">${k}</div><div class="v">${v}</div></div>`;
     $('#d-stats').innerHTML =
-      stat('Tests del candidato', total ? `${passed}/${total}` : '—') +
-      stat(left != null ? 'Tiempo restante' : 'Tiempo usado', left != null ? fmtTime(left) : c.startedAt ? fmtTime(elapsed) : '—') +
-      stat('Ejecuciones', c.runs || 0) +
-      stat('Pegados', c.pastes || 0) +
-      stat('Cambios de pestaña', c.blurs || 0);
+      stat(t('a.k.tests'), total ? `${passed}/${total}` : '—') +
+      stat(left != null ? t('a.k.left') : t('a.k.used'), left != null ? fmtTime(left) : c.startedAt ? fmtTime(elapsed) : '—') +
+      stat(t('a.k.runs'), c.runs || 0) +
+      stat(t('a.k.pastes'), c.pastes || 0) +
+      stat(t('a.k.blurs'), c.blurs || 0);
   }
-
-  const EV = { activated: 'Link activado', deactivated: 'Link bloqueado', scheduled: 'Activación programada', emailed: 'Correo enviado', start: 'Inició la evaluación',
-    run: 'Corrió tests', paste: 'Pegó texto', blur: 'Salió de la pestaña', focus: 'Regresó a la pestaña', submit: 'Envió su solución', expired: 'Se agotó el tiempo',
-    reset: 'Reinició el código', restored: 'Sesión recuperada', version: 'Guardó versión', restore: 'Restauró versión',
-    reopened: 'Reabriste la evaluación', time_added: 'Le diste tiempo extra' };
 
   // =====================================================================
   // Avisos (se acabó el tiempo / envió su evaluación)
   // =====================================================================
   const SEEN_KEY = 'alcor:notices-seen';
   let notices = [];
+  const noticeText = (n) => t('notice.' + n.kind, { name: n.name });
   const seenAt = () => { try { return Number(localStorage.getItem(SEEN_KEY)) || 0; } catch { return 0; } };
   function renderBadge() {
     const n = notices.filter((x) => x.t > seenAt()).length;
@@ -638,30 +638,46 @@
   }
   function onNotice(n) {
     notices.unshift(n); renderBadge();
-    toast(n.text); beep();
+    toast(noticeText(n)); beep();
     if ('Notification' in window && Notification.permission === 'granted') {
       try {
-        const nt = new Notification('Alcor', { body: n.text, icon: '/favicon.svg', tag: n.id });
+        const nt = new Notification('Alcor', { body: noticeText(n), icon: '/favicon.svg', tag: n.id });
         nt.onclick = () => { window.focus(); go('cands'); select(n.candidate); nt.close(); };
       } catch { /* */ }
     }
   }
   $('#nav-notices').onclick = () => {
     const perm = 'Notification' in window ? Notification.permission : 'unsupported';
-    const item = (n) => `<button class="vitem" data-c="${n.candidate}" style="padding:10px 12px">${icon(n.kind === 'expired' ? 'clock' : 'check')}<span class="lab" style="white-space:normal">${esc(n.text)}${n.t > seenAt() ? ' <span class="tag" style="margin-left:4px">nuevo</span>' : ''}</span><span class="when">${new Date(n.t).toLocaleString('es-MX', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' })}</span></button>`;
-    const m = modal({ title: 'Avisos', size: 'sm', body: `<div style="padding:8px">
-        ${perm === 'default' ? `<div class="notice" style="border:1px solid var(--border);border-radius:8px;margin:4px 4px 10px">${icon('bell').replace('<svg', '<svg style="width:15px;height:15px;color:var(--muted)"')}<span style="flex:1">Recibe una notificación del sistema aunque tengas otra pestaña abierta.</span><button class="btn sm primary" id="n-perm">Activar</button></div>` : ''}
-        ${perm === 'denied' ? '<div class="hint" style="margin:4px 8px 10px">Las notificaciones del navegador están bloqueadas para este sitio; actívalas desde la configuración del navegador.</div>' : ''}
-        <div class="vlist">${notices.length ? notices.map(item).join('') : '<div class="empty">Aún no hay avisos. Aquí verás cuando a alguien se le acabe el tiempo o envíe su evaluación.</div>'}</div></div>` });
+    const item = (n) => `<button class="vitem" data-c="${n.candidate}" style="padding:10px 12px">${icon(n.kind === 'expired' ? 'clock' : 'check')}<span class="lab" style="white-space:normal">${esc(noticeText(n))}${n.t > seenAt() ? ` <span class="tag" style="margin-left:4px">${t('new')}</span>` : ''}</span><span class="when">${new Date(n.t).toLocaleString(loc(), { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' })}</span></button>`;
+    const m = modal({ title: t('a.notices'), size: 'sm', body: `<div style="padding:8px">
+        ${perm === 'default' ? `<div class="notice" style="border:1px solid var(--border);border-radius:8px;margin:4px 4px 10px">${icon('bell').replace('<svg', '<svg style="width:15px;height:15px;color:var(--muted)"')}<span style="flex:1">${t('a.notices.perm')}</span><button class="btn sm primary" id="n-perm">${t('a.activate')}</button></div>` : ''}
+        ${perm === 'denied' ? `<div class="hint" style="margin:4px 8px 10px">${t('a.notices.denied')}</div>` : ''}
+        <div class="vlist">${notices.length ? notices.map(item).join('') : `<div class="empty">${t('a.notices.empty')}</div>`}</div></div>` });
     try { localStorage.setItem(SEEN_KEY, String(Date.now())); } catch { /* */ }
     renderBadge();
-    $$('[data-c]', m.el).forEach((b) => b.onclick = () => { m.close(); if (cands.has(b.dataset.c)) { go('cands'); select(b.dataset.c); } else toast('Ese candidato ya no existe'); });
-    if ($('#n-perm')) $('#n-perm').onclick = async () => { const r = await Notification.requestPermission(); m.close(); toast(r === 'granted' ? 'Notificaciones activadas' : 'No se activaron las notificaciones'); };
+    $$('[data-c]', m.el).forEach((b) => b.onclick = () => { m.close(); if (cands.has(b.dataset.c)) { go('cands'); select(b.dataset.c); } else toast(t('a.gone')); });
+    if ($('#n-perm')) $('#n-perm').onclick = async () => { const r = await Notification.requestPermission(); m.close(); toast(r === 'granted' ? t('a.notif_on') : t('a.notif_off')); };
   };
+
+  // =====================================================================
+  // Actividad
+  // =====================================================================
+  const WHY = ['late_save', 'late_submit', 'late_return', 'tab_closed', 'from_admin', 'from_candidate'];
+  function evDetail(e) {
+    if (e.type === 'scheduled' && e.at) return fmtIn(e.at, e.tz || localTz());
+    if (e.type === 'paste' && /^\d+$/.test(String(e.detail))) return t('ev.chars', { n: e.detail });
+    if (e.type === 'version' && e.detail) return versionLabel({ label: e.detail });
+    if (WHY.includes(e.detail)) return t('why.' + e.detail);
+    return e.detail;
+  }
   function renderTimeline() {
     const c = detailCache; if (!c || !$('#d-timeline')) return;
     const items = (c.timeline || []).slice(-200).reverse();
-    $('#d-timeline').innerHTML = items.length ? items.map((e) => `<li><time>${hhmm(e.t)}</time><span>${EV[e.type] || esc(e.type)}${e.exercise && idsOf(c).length > 1 ? ` <span class="faint">· ${esc((chById(e.exercise) || {}).title || '')}</span>` : ''}${e.type === 'run' && e.total != null ? ` <span class="mono">${e.passed}/${e.total}</span>` : ''}${e.detail ? ` <span class="muted">· ${esc(e.detail)}</span>` : ''}</span></li>`).join('') : '<li class="faint" style="display:block">Sin actividad todavía.</li>';
+    $('#d-timeline').innerHTML = items.length ? items.map((e) => {
+      const label = I18N.D[I18N.lang()]['ev.' + e.type] ? t('ev.' + e.type) : esc(e.type);
+      const detail = evDetail(e);
+      return `<li><time>${hhmm(e.t)}</time><span>${label}${e.exercise && idsOf(c).length > 1 ? ` <span class="faint">· ${esc(title(e.exercise))}</span>` : ''}${e.type === 'run' && e.total != null ? ` <span class="mono">${e.passed}/${e.total}</span>` : ''}${detail ? ` <span class="muted">· ${esc(detail)}</span>` : ''}</span></li>`;
+    }).join('') : `<li class="faint" style="display:block">${t('a.no_activity')}</li>`;
   }
 
   // =====================================================================
@@ -670,8 +686,8 @@
   function connectStream() {
     const es = new EventSource('/api/admin/stream');
     const st = $('#stream-status');
-    es.onopen = () => { st.className = 'status live'; st.textContent = 'En tiempo real'; };
-    es.onerror = () => { st.className = 'status warn'; st.textContent = 'Reconectando…'; };
+    es.onopen = () => { st.className = 'status live'; st.textContent = t('a.live'); };
+    es.onerror = () => { st.className = 'status warn'; st.textContent = t('a.reconnecting'); };
     es.onmessage = async (e) => {
       const msg = JSON.parse(e.data);
       if (msg.type === 'notice') return onNotice(msg.notice);

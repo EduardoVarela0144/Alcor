@@ -1,12 +1,13 @@
 // Catálogo estático de ejercicios. Cada uno tiene instrucciones, la función a
 // implementar por lenguaje, código inicial y casos de prueba { args, expected }.
 // Los casos con `hidden: true` nunca se envían al candidato: solo el admin los ve
-// y los ejecuta. Para agregar un ejercicio, copia uno y ajústalo.
+// y los ejecuta. Para agregar un ejercicio, copia uno y ajústalo (y agrega su
+// traducción al inglés en EN, al final del archivo).
 
 const py = (name, params, ret) => `def ${name}(${params}):\n    # tu código aquí\n    return ${ret}\n`;
 const js = (name, params, ret) => `function ${name}(${params}) {\n  // tu código aquí\n  return ${ret};\n}\n`;
 
-module.exports = [
+const CHALLENGES = [
   // ---------------- Fácil ----------------
   {
     id: 'fizzbuzz', title: 'FizzBuzz', difficulty: 'Fácil', topic: 'Lógica', minutes: 10,
@@ -268,3 +269,31 @@ module.exports = [
     ],
   },
 ];
+
+// ---------------- Traducciones al inglés ----------------
+const EN = {
+  'fizzbuzz': { title: 'FizzBuzz', topic: 'Logic', description: 'Write a function that takes an integer `n` and returns a list with the numbers from 1 to `n` as strings, replacing multiples of 3 with "Fizz", multiples of 5 with "Buzz" and multiples of both with "FizzBuzz".' },
+  'reverse-words': { title: 'Reverse words', topic: 'Strings', description: 'Given a string `s`, return its words in reverse order separated by a single space. Ignore leading and trailing spaces and repeated spaces between words.' },
+  'palindrome': { title: 'Palindrome', topic: 'Strings', description: 'Determine whether the string `s` is a palindrome considering only letters and digits and ignoring case. Return `true`/`True` or `false`/`False`.' },
+  'two-sum': { title: 'Two Sum', topic: 'Arrays / Hashing', description: 'Given an array of integers `nums` and an integer `target`, return the indices `[i, j]` (with `i < j`) of the two numbers that add up to `target`. There is always exactly one solution. Try to do it in O(n).' },
+  'valid-parentheses': { title: 'Valid parentheses', topic: 'Stacks', description: 'Given a string `s` containing only the characters `()[]{}`, determine whether it is valid: every opening bracket must be closed by the same type and in the correct order.' },
+  'binary-search': { title: 'Binary search', topic: 'Searching', description: 'Given an array `nums` sorted in ascending order with no duplicates, return the index of `target` or `-1` if it does not exist. It must be O(log n).' },
+  'roman-to-int': { title: 'Roman to integer', topic: 'Strings', description: 'Convert a Roman numeral `s` (I, V, X, L, C, D, M) to an integer. Remember the subtraction rule: IV = 4, IX = 9, XL = 40, XC = 90, CD = 400, CM = 900.' },
+  'word-frequency': { title: 'Word frequency', topic: 'Hash maps', description: 'Given a text, return a dictionary/object with how many times each word appears. Convert everything to lowercase and treat any sequence of letters a-z as a word (ignore punctuation and digits).' },
+  'longest-unique': { title: 'Longest substring without repeats', topic: 'Sliding window', description: 'Given a string `s`, return the length of the longest substring without repeating characters. Example: "abcabcbb" → 3 ("abc").' },
+  'merge-intervals': { title: 'Merge intervals', topic: 'Sorting', description: 'Given a list of intervals `[start, end]`, merge all overlapping intervals and return the resulting list sorted by start. Intervals that touch (e.g. [1,4] and [4,5]) are also merged.' },
+  'max-subarray': { title: 'Maximum subarray', topic: 'Dynamic programming', description: 'Given a non-empty array of integers `nums`, return the largest sum of a contiguous subarray. Aim for an O(n) solution (Kadane’s algorithm).' },
+  'flatten': { title: 'Flatten nested list', topic: 'Recursion', description: 'Given a list that may contain numbers or other lists (at any depth), return a flat list with all the numbers in the same order. Do not use standard library functions that do it for you (e.g. `Array.flat`).' },
+  'rotate-matrix': { title: 'Rotate matrix', topic: 'Matrices', description: 'Given an n×n square `matrix`, return a new matrix rotated 90° clockwise.' },
+  'top-k-frequent': { title: 'Top K frequent', topic: 'Hash maps / Sorting', description: 'Given an array `nums` and an integer `k`, return the `k` most frequent numbers sorted by descending frequency; on ties, the smaller number comes first.' },
+  'num-islands': { title: 'Number of islands', topic: 'Graphs (BFS/DFS)', description: 'Given a `grid` of 1s (land) and 0s (water), return how many islands there are. An island is a group of 1s connected horizontally or vertically (not diagonally).' },
+  'coin-change': { title: 'Coin change', topic: 'Dynamic programming', description: 'Given the denominations `coins` (unlimited supply of each) and an amount `amount`, return the minimum number of coins needed to make up the amount, or `-1` if it is not possible.' },
+  'lru-cache': { title: 'Simulate an LRU cache', topic: 'Data structure design', description: 'Simulate an LRU cache with capacity `capacity`. You receive a list of operations: `["put", key, value]` or `["get", key]`. Return a list with the result of each `get` (the value, or `-1` if it does not exist). When inserting into a full cache, evict the least recently used key. Both `get` and `put` count as a use. Ideally O(1) per operation.' },
+};
+for (const c of CHALLENGES) if (EN[c.id]) c.en = EN[c.id];
+
+// Código inicial con el comentario en el idioma del candidato.
+const starterFor = (c, lang, ui) => (ui === 'en' ? c.starter[lang].replace('tu código aquí', 'your code here') : c.starter[lang]);
+
+module.exports = CHALLENGES;
+module.exports.starterFor = starterFor;

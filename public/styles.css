@@ -372,3 +372,7 @@ pre.console.err { color: var(--red); }
 
 /* contador de avisos */
 .badge { margin-left: auto; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px; background: var(--brand); color: #fff; font: 600 11px/18px var(--sans); text-align: center; }
+
+/* selector de idioma junto al de tema */
+.theme-slot { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.lang-seg button { height: 24px; padding: 0 8px; font: 600 11.5px var(--mono); letter-spacing: .02em; }

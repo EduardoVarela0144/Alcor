@@ -13,7 +13,7 @@ self.onmessage = async (e) => {
     return;
   }
   if (!target) {
-    self.postMessage({ error: `No se encontró la función "${fn}".`, stdout: logs.join('\n'), cases: [] });
+    self.postMessage({ error: "__NOFN__", stdout: logs.join('\n'), cases: [] });
     return;
   }
   const cases = [];

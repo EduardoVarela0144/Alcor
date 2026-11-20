@@ -1,6 +1,7 @@
 // Runner compartido (candidato y admin): ejecuta tests en el navegador, con timeout.
 (function () {
   const TIMEOUT_MS = 6000;
+  const tr = (k, v) => (window.I18N ? I18N.t(k, v) : k);
   const workers = {};
   const readyPromises = {};
 
@@ -12,7 +13,7 @@
       ? new Promise((resolve, reject) => {
           const onMsg = (e) => { if (e.data && e.data.ready) { w.removeEventListener('message', onMsg); resolve(); } };
           w.addEventListener('message', onMsg);
-          w.addEventListener('error', (e) => reject(new Error(e.message || 'No se pudo cargar Python')));
+          w.addEventListener('error', (e) => reject(new Error(e.message || tr('run.pyload'))));
         })
       : Promise.resolve();
     return w;
@@ -43,7 +44,7 @@
       const timer = setTimeout(() => {
         w.removeEventListener('message', onMsg);
         kill(lang);
-        resolve({ error: `Tiempo límite excedido (${TIMEOUT_MS / 1000}s). ¿Hay un ciclo infinito?`, cases: [], stdout: '' });
+        resolve({ error: tr('run.timeout', { s: TIMEOUT_MS / 1000 }), cases: [], stdout: '' });
       }, TIMEOUT_MS);
       const onMsg = (e) => {
         if (e.data && e.data.ready) return;
@@ -57,7 +58,8 @@
       const ok = !raw.error && !c.error && deepEqual(c.actual, t.expected);
       return { args: t.args, expected: t.expected, actual: c.actual, error: c.error, ms: c.ms, hidden: !!t.hidden, ok };
     });
-    return { error: raw.error || null, stdout: raw.stdout || '', cases, passed: cases.filter((c) => c.ok).length, total: cases.length };
+    const error = raw.error === '__NOFN__' ? tr('run.nofn', { fn }) : raw.error || null;
+    return { error, stdout: raw.stdout || '', cases, passed: cases.filter((c) => c.ok).length, total: cases.length };
   }
 
   window.AlcorRunner = { run, warmup };

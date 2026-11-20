@@ -19,7 +19,7 @@ def __alcor_run(code, fn, tests_json):
             return json.dumps(res)
         f = ns.get(fn)
         if not callable(f):
-            res["error"] = 'No se encontró la función "%s".' % fn
+            res["error"] = '__NOFN__'
             return json.dumps(res)
         for t in json.loads(tests_json):
             start = time.perf_counter()
