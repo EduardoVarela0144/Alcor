@@ -5,6 +5,14 @@ del catálogo, Alcor genera un link y el candidato los resuelve en **Python** o 
 con **tests automáticos**. Tú ves su código, ejecuciones y actividad **en vivo** desde un panel
 de administrador al que solo tú tienes acceso.
 
+**Tipos de entrevista** (los eliges al preparar el link):
+- **Coding**: problemas de programación con tests automáticos (17 en el catálogo).
+- **System design**: el candidato dibuja la arquitectura en un **pizarrón** (cajas, bases de datos, círculos, rombos,
+  flechas que se pegan a las figuras, texto, lápiz, colores, líneas punteadas, deshacer/rehacer, zoom) y escribe sus
+  decisiones en las notas. Tú ves el diagrama en vivo junto con los requerimientos y una **rúbrica** que solo ves tú,
+  y puedes descargarlo en PNG. 6 problemas: acortador de URLs, rate limiter, notificaciones, mensajería, feed y archivos.
+- **Mixta**: problemas de programación y de diseño en la misma evaluación.
+
 - **Sin base de datos ni dependencias**: un solo `server.js` con Node puro. El estado vive en `data/db.json`.
 - **Ejecución local en el navegador**: JavaScript corre en un Web Worker; Python corre con
   [Pyodide](https://pyodide.org) (CPython en WebAssembly). Timeout de 6 s contra ciclos infinitos.
@@ -74,6 +82,12 @@ Variables de entorno:
 | `RESEND_API_KEY` | Opcional. API key de [Resend](https://resend.com) para enviar correos desde Alcor. |
 | `MAIL_FROM` | Opcional. Remitente, p. ej. `Alcor <evaluaciones@tudominio.com>` (dominio verificado en Resend). |
 | `ADMIN_EMAIL` | Opcional. Tu correo para recibir avisos (requiere `RESEND_API_KEY`). |
+
+## Agregar problemas de system design
+
+Edita `designs.js`. Cada problema define enunciado, requerimientos, preguntas guía y la rúbrica del evaluador,
+con su traducción al inglés en `en`. El diagrama se guarda como JSON (ver `public/board.js`), así que el autoguardado,
+la vista en vivo, las versiones, el tiempo y reabrir funcionan igual que con el código.
 
 ## Agregar retos
 

@@ -17,6 +17,21 @@
   let dirty = false;
   let finished = false;
   let lastSaved = 0;
+  let board = null;          // pizarrón (uno solo, se reutiliza entre ejercicios de diseño)
+  const isDesign = (c) => c && c.kind === 'design';
+  const hasCoding = () => S.challenges.some((c) => !isDesign(c));
+  // "Documento" de un ejercicio de diseño: misma interfaz que un Doc de CodeMirror (getValue / setValue)
+  function designDoc(id, initial) {
+    let val = initial || AlcorBoard.EMPTY();
+    return {
+      kind: 'design',
+      raw: () => val,
+      store(v) { val = v; },
+      getValue: () => (active === id && board ? board.getValue() : val),
+      setValue(v) { val = v; if (active === id && board) board.reset(v); onDocChange(); },
+    };
+  }
+  function onDocChange() { dirty = true; writeLocal(); setSave('saving'); queueSync(); }
 
   // Textos fijos de la página (se vuelven a pintar si el admin preparó otro idioma)
   function paintStatic() {
@@ -138,10 +153,15 @@
     $('#w-challenge').textContent = S.challenges.length === 1 ? exText(S.challenges[0], 'title') : t('c.n_ex', { n: S.challenges.length });
     $('#w-lang').textContent = LANG[S.lang];
     $('#w-min').textContent = `${S.minutes} min`;
-    const rule = (ic) => `<li>${icon(ic)}<span>${t('c.rule.' + ic)}</span></li>`;
-    $('#w-rules').innerHTML = ['clock', 'play', 'save', 'history', 'eye', 'send'].map(rule).join('');
+    const rule = (ic, key) => `<li>${icon(ic)}<span>${t('c.rule.' + (key || ic))}</span></li>`;
+    const rules = [rule('clock')];
+    if (hasCoding()) rules.push(rule('play'));
+    if (S.challenges.some(isDesign)) rules.push(rule('book', 'design'));
+    rules.push(rule('save'), rule('history'), rule('eye'), rule('send'));
+    $('#w-rules').innerHTML = rules.join('');
+    if (S.type && S.type !== 'coding') $('#w-lang').textContent = t('kind.' + S.type) + (hasCoding() ? ' · ' + LANG[S.lang] : '');
     show('screen-welcome');
-    if (S.lang === 'python') {
+    if (S.lang === 'python' && hasCoding()) {
       $('#w-warm').textContent = t('c.py.loading');
       AlcorRunner.warmup('python').then(() => ($('#w-warm').textContent = t('c.py.ready'))).catch(() => ($('#w-warm').textContent = t('c.py.fail')));
     }
@@ -169,16 +189,39 @@
   }
 
   function open(id) {
+    // Al salir de un ejercicio de diseño guardamos lo que tiene el pizarrón
+    if (active && docs[active] && docs[active].kind === 'design' && board) docs[active].store(board.getValue());
     active = id;
-    const ch = challenge(id);
+    const ch = challenge(id), design = isDesign(ch);
     $('#p-title').textContent = exText(ch, 'title');
     $('#p-desc').innerHTML = md(exText(ch, 'description'));
     $('#p-diff').textContent = diff(ch.difficulty);
     $('#p-topic').textContent = exText(ch, 'topic') || '';
+    $('#p-coding').classList.toggle('hidden', design);
+    $('#p-design').classList.toggle('hidden', !design);
+    $('#design-wrap').classList.toggle('hidden', !design);
+    $('#code-wrap').classList.toggle('hidden', design);
+    $('#results').classList.toggle('hidden', design);
+    $('#btn-run').classList.toggle('hidden', design);
+    if (design) {
+      $('#p-req').innerHTML = (exText(ch, 'requirements') || []).map((r) => `<li>${esc(r)}</li>`).join('');
+      $('#p-q').innerHTML = (exText(ch, 'questions') || []).map((q) => `<li>${esc(q)}</li>`).join('');
+      if (!board) {
+        board = AlcorBoard.create($('#design-wrap'), {
+          onChange: (v) => { if (docs[active] && docs[active].kind === 'design') docs[active].store(v); onDocChange(); },
+          onPaste: (text) => pending.push({ type: 'paste', exercise: active, detail: String(text.length) }),
+        });
+      }
+      board.reset(docs[id].raw());
+      renderTabs(); updateVersionsBtn();
+      dirty = true; queueSync();
+      return;
+    }
     $('#p-fn').textContent = S.lang === 'python' ? `def ${ch.fn}(...)` : `function ${ch.fn}(...)`;
     $('#p-examples').innerHTML = ch.tests.map((tc) =>
       `<div class="example">${esc(signature(S.lang, ch.fn, tc.args))}<br><span class="faint">→</span> ${esc(json(tc.expected, S.lang))}</div>`).join('');
     editor.swapDoc(docs[id]);
+    editor.refresh();
     editor.focus();
     const r = results[id];
     if (r) showResults(r); else {
@@ -204,8 +247,9 @@
       },
     });
     for (const ch of S.challenges) {
+      if (isDesign(ch)) { docs[ch.id] = designDoc(ch.id, S.code[ch.id]); continue; }
       docs[ch.id] = CodeMirror.Doc(typeof S.code[ch.id] === 'string' ? S.code[ch.id] : starter(ch.starter), mode);
-      docs[ch.id].on('change', () => { dirty = true; writeLocal(); setSave('saving'); queueSync(); });
+      docs[ch.id].on('change', onDocChange);
     }
     editor.on('paste', (cm, e) => {
       const text = (e.clipboardData || window.clipboardData).getData('text') || '';
@@ -214,6 +258,10 @@
     window.addEventListener('blur', () => { pending.push({ type: 'blur', exercise: active }); queueSync(); });
     window.addEventListener('focus', () => { pending.push({ type: 'focus', exercise: active }); queueSync(); });
     window.addEventListener('online', () => { dirty = true; sync(); });
+    // Ctrl/⌘+S en el pizarrón guarda una versión (en el editor de código lo maneja CodeMirror)
+    document.addEventListener('keydown', (e) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 's' && isDesign(challenge(active))) { e.preventDefault(); if (!document.querySelector('.overlay')) saveVersionPrompt(); }
+    });
 
     $('#btn-run').onclick = runTests;
     $('#btn-submit').onclick = () => submit(false);
@@ -234,7 +282,7 @@
     document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') flush(); });
 
     open(active && challenge(active) ? active : S.challenges[0].id);
-    if (S.lang === 'python') AlcorRunner.warmup('python');
+    if (S.lang === 'python' && hasCoding()) AlcorRunner.warmup('python');
     setInterval(() => { if (dirty || pending.length) sync(); }, 2000); // red de seguridad
     setInterval(tick, 500); tick();
   }
@@ -273,7 +321,15 @@
     const m = modal({ title: esc(t('v.title', { ex: exText(challenge(active), 'title') })),
       body: `<div class="vmodal"><div class="code"><div class="code-h" id="vm-h"></div><div class="editor-wrap"><textarea id="vm-code"></textarea></div></div><div class="lst"><div class="vlist" id="vm-list"></div></div></div>`,
       footer: `<button class="btn" id="vm-save">${icon('save')} ${t('v.save_current')}</button><div class="spacer"></div><button class="btn" data-no>${t('close')}</button><button class="btn primary" id="vm-restore" disabled>${icon('rotate')} ${t('v.restore')}</button>` });
-    const viewer = CodeMirror.fromTextArea($('#vm-code'), { mode: S.lang === 'python' ? 'python' : 'javascript', lineNumbers: true, readOnly: true });
+    const design = isDesign(challenge(active));
+    const viewer = design ? null : CodeMirror.fromTextArea($('#vm-code'), { mode: S.lang === 'python' ? 'python' : 'javascript', lineNumbers: true, readOnly: true });
+    // En diseño mostramos el diagrama y las notas en lugar del código
+    const showCode = (code) => {
+      if (!design) { viewer.setValue(code); setTimeout(() => viewer.refresh(), 0); return; }
+      const v = AlcorBoard.parse(code);
+      m.el.querySelector('.vmodal .editor-wrap').innerHTML = `<div class="v-preview">${v.elements.length ? AlcorBoard.toSVG(code, { maxW: 900 }) : `<span class="faint">—</span>`}</div>${v.notes ? `<div class="v-notes">${esc(v.notes)}</div>` : ''}`;
+    };
+    if (design) m.el.querySelector('.vmodal .editor-wrap').style.cssText = 'display:flex;flex-direction:column';
     let sel = null;
     const item = (v, cur) => `<button class="vitem ${sel === (cur ? 'cur' : v.id) ? 'on' : ''}" data-id="${cur ? 'cur' : v.id}">
       ${icon(cur ? 'eye' : v.auto ? 'play' : 'save')}<span class="lab">${esc(cur ? t('v.current') : versionLabel(v))}</span><span class="when">${cur ? t('now') : hhmm(v.t)}</span></button>`;
@@ -286,10 +342,10 @@
     const pick = (id) => {
       sel = id;
       const v = list.find((x) => x.id === id);
-      viewer.setValue(id === 'cur' ? docs[active].getValue() : v.code);
+      showCode(id === 'cur' ? docs[active].getValue() : v.code);
       $('#vm-h').textContent = id === 'cur' ? t('v.current.h') : `${versionLabel(v)} · ${new Date(v.t).toLocaleString(loc(), { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}${v.auto ? ' · ' + t('v.auto') : ''}`;
       $('#vm-restore').disabled = id === 'cur';
-      render(); setTimeout(() => viewer.refresh(), 0);
+      render();
     };
     pick(list[0] ? list[0].id : 'cur');
     m.el.querySelector('[data-no]').onclick = m.close;
@@ -356,7 +412,7 @@
 
   let running = false;
   async function runTests() {
-    if (running) return;
+    if (running || isDesign(challenge(active))) return;
     running = true;
     const id = active, ch = challenge(id);
     const btn = $('#btn-run');

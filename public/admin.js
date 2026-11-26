@@ -11,6 +11,7 @@
   let follow = true;         // seguir el ejercicio que el candidato tiene abierto
   let viewingVersion = null; // versión que se está viendo (null = en vivo)
   let viewer = null;
+  let boardView = null;      // pizarrón de solo lectura (system design)
   let detailCache = null;
   let filter = 'all';
 
@@ -120,8 +121,17 @@
   // =====================================================================
   // Nuevo candidato
   // =====================================================================
-  const form = { name: '', email: '', lang: 'python', theme: 'system', ui: I18N.lang(), ids: [], minutes: null, activation: 'now', date: '', tz: localTz() };
+  const form = { name: '', email: '', type: 'coding', lang: 'python', theme: 'system', ui: I18N.lang(), ids: [], minutes: null, activation: 'now', date: '', tz: localTz() };
   const GROUPS = ['Fácil', 'Media', 'Difícil'];
+  const isDesign = (c) => c && c.kind === 'design';
+  // Ejercicios agrupados: los de programación por dificultad y los de diseño aparte
+  const groupsFor = (type) => [
+    ...(type !== 'design' ? GROUPS.map((g) => ({ label: diff(g), items: challenges.filter((c) => !isDesign(c) && c.difficulty === g) })) : []),
+    ...(type !== 'coding' ? [{ label: t('a.group.design'), items: challenges.filter(isDesign) }] : []),
+  ].filter((g) => g.items.length);
+  const exMeta = (c) => isDesign(c)
+    ? `${diff(c.difficulty)} · ${c.minutes} min · ${t('a.n_req', { n: (exText(c, 'requirements') || []).length })}`
+    : `${esc(exText(c, 'topic') || '')} · ${c.minutes} min · ${t('a.n_cases', { n: c.tests.length })}`;
   function renderNewForm(done) {
     const page = $('#new-page');
     if (done) return renderCreated(done);
@@ -131,12 +141,15 @@
       <p>${t('a.new.d')}</p>
       <form id="new-form" autocomplete="off">
         <div class="card"><div class="card-h"><span class="n">1</span><h3>${t('a.s.cand')}</h3></div><div class="card-b">
+          <span class="label">${t('a.kind')}</span>
+          <div class="seg full">${segBtn('type', 'coding', t('kind.coding'), 'play')}${segBtn('type', 'design', t('kind.design'), 'book')}${segBtn('type', 'mixed', t('kind.mixed'), 'plus')}</div>
+          <div class="hint" id="f-type-help" style="margin-bottom:14px"></div>
           <div class="grid2">
             <div><label for="f-name">${t('a.name')}</label><input id="f-name" placeholder="Ana López" maxlength="80" value="${esc(form.name)}" required></div>
             <div><label for="f-email">${t('a.email')} <span class="faint" style="font-weight:400">${t('a.optional')}</span></label><input id="f-email" type="email" placeholder="${t('a.email.ph')}" value="${esc(form.email)}"></div>
           </div>
           <div class="grid2" style="margin-top:14px">
-            <div><span class="label">${t('a.plang')}</span><div class="seg full">${segBtn('lang', 'python', 'Python')}${segBtn('lang', 'javascript', 'JavaScript')}</div></div>
+            <div id="f-plang"><span class="label">${t('a.plang')}</span><div class="seg full">${segBtn('lang', 'python', 'Python')}${segBtn('lang', 'javascript', 'JavaScript')}</div></div>
             <div><span class="label">${t('a.ui0')}</span><div class="seg full">${segBtn('ui', 'es', 'Español')}${segBtn('ui', 'en', 'English')}</div></div>
           </div>
           <div class="grid2" style="margin-top:14px">
@@ -146,13 +159,7 @@
         </div></div>
 
         <div class="card"><div class="card-h"><span class="n">2</span><h3>${t('a.s.ex')}</h3><div class="spacer"></div><span class="faint" id="f-count"></span></div><div class="card-b">
-          <div class="catalog" id="catalog">${GROUPS.map((g) => {
-            const items = challenges.filter((c) => c.difficulty === g);
-            return `<div class="cat-group">${diff(g)}<span class="spacer"></span>${items.length}</div>` + items.map((c) => `
-              <label class="cat-item" style="margin:0;font-weight:400"><input type="checkbox" value="${c.id}" ${form.ids.includes(c.id) ? 'checked' : ''}>
-                <span class="t">${esc(exText(c, 'title'))}<small>${esc(exText(c, 'topic') || '')} · ${c.minutes} min · ${t('a.n_cases', { n: c.tests.length })}</small></span>
-                <button type="button" class="link" data-preview="${c.id}">${t('a.view')}</button></label>`).join('');
-          }).join('')}</div>
+          <div class="catalog" id="catalog"></div>
           <div class="grid2" style="margin-top:14px">
             <div><label for="f-min">${t('a.duration')}</label><input id="f-min" type="number" min="5" max="240"><div class="hint">${t('a.duration.h')}</div></div>
           </div>
@@ -200,18 +207,32 @@
       $('#f-count').textContent = form.ids.length ? t('a.n_sel', { n: form.ids.length }) : t('a.pick_ex');
       const sum = form.ids.reduce((s, id) => s + chById(id).minutes, 0);
       if (!form.minutesTouched) $('#f-min').value = sum || 20;
-      $('#f-summary').textContent = form.ids.length ? t('a.summary', { n: form.ids.length, m: $('#f-min').value, lang: LANG[form.lang] }) : '';
+      const kindLabel = form.type === 'design' ? t('kind.design') : form.type === 'mixed' ? `${t('kind.mixed')} · ${LANG[form.lang]}` : LANG[form.lang];
+      $('#f-summary').textContent = form.ids.length ? t('a.summary', { n: form.ids.length, m: $('#f-min').value, lang: kindLabel }) : '';
+    };
+    // Catálogo según el tipo de entrevista
+    const renderCatalog = () => {
+      const allowed = new Set(groupsFor(form.type).flatMap((g) => g.items.map((c) => c.id)));
+      form.ids = form.ids.filter((id) => allowed.has(id)); // quita lo que ya no aplica al tipo elegido
+      $('#catalog').innerHTML = groupsFor(form.type).map((g) => `<div class="cat-group">${g.label}<span class="spacer"></span>${g.items.length}</div>` + g.items.map((c) => `
+        <label class="cat-item" style="margin:0;font-weight:400"><input type="checkbox" value="${c.id}" ${form.ids.includes(c.id) ? 'checked' : ''}>
+          <span class="t">${esc(exText(c, 'title'))}<small>${exMeta(c)}</small></span>
+          <button type="button" class="link" data-preview="${c.id}">${t('a.view')}</button></label>`).join('')).join('');
+      $$('#catalog input').forEach((box) => box.onchange = () => {
+        if ($$('#catalog input:checked').length > 6) { box.checked = false; toast(t('a.max6')); }
+        updateSel();
+      });
+      $$('[data-preview]').forEach((b) => b.onclick = (e) => { e.preventDefault(); previewModal(b.dataset.preview); });
+      $('#f-type-help').textContent = t('a.kind.' + form.type + '.h');
+      $('#f-plang').classList.toggle('hidden', form.type === 'design'); // el lenguaje solo aplica a coding
     };
     $$('#new-form .seg button').forEach((b) => b.onclick = () => {
       form[b.dataset.k] = b.dataset.v;
       $$(`#new-form .seg button[data-k="${b.dataset.k}"]`).forEach((x) => x.classList.toggle('on', x === b));
+      if (b.dataset.k === 'type') { form.minutesTouched = false; renderCatalog(); }
       updateHelp(); updateSel();
     });
-    $$('#catalog input').forEach((box) => box.onchange = () => {
-      if ($$('#catalog input:checked').length > 6) { box.checked = false; toast(t('a.max6')); }
-      updateSel();
-    });
-    $$('[data-preview]').forEach((b) => b.onclick = (e) => { e.preventDefault(); previewModal(b.dataset.preview); });
+    renderCatalog();
     $('#f-min').oninput = () => { form.minutesTouched = true; updateSel(); };
     $('#f-name').oninput = (e) => { form.name = e.target.value; };
     $('#f-email').oninput = (e) => { form.email = e.target.value; };
@@ -232,7 +253,7 @@
       }
       try {
         const c = await api('/api/admin/candidates', { method: 'POST', body: JSON.stringify({
-          name: $('#f-name').value, email: $('#f-email').value.trim() || undefined, lang: form.lang, theme: form.theme, ui: form.ui,
+          name: $('#f-name').value, email: $('#f-email').value.trim() || undefined, lang: form.lang, theme: form.theme, ui: form.ui, type: form.type,
           challenges: form.ids, minutes: $('#f-min').value, activation: form.activation, opensAt, tz: form.tz,
         }) });
         cands.set(c.id, c); remember(c); renderList();
@@ -267,7 +288,20 @@
   // =====================================================================
   // Catálogo
   // =====================================================================
+  function designPreviewHtml(c) {
+    const list = (arr, cls = '') => `<ul class="req-list ${cls}">${(arr || []).map((x) => `<li>${esc(x)}</li>`).join('')}</ul>`;
+    return `
+      <div style="display:flex;gap:6px;flex-wrap:wrap"><span class="tag kind-tag">${t('kind.design')}</span><span class="tag">${esc(diff(c.difficulty))}</span><span class="tag">${t('a.suggested', { n: c.minutes })}</span></div>
+      <h2>${esc(exText(c, 'title'))}</h2>
+      <div class="section-title">${t('a.instr_cand')}</div>
+      <p class="desc">${md(exText(c, 'description'))}</p>
+      <div class="section-title">${t('a.requirements')}</div>${list(exText(c, 'requirements'))}
+      <div class="section-title">${t('a.questions')}</div>${list(exText(c, 'questions'))}
+      <div class="section-title">${t('a.rubric')}</div>${list(exText(c, 'rubric'), 'rubric')}
+      <p class="faint" style="font-size:12px;margin-top:10px">${t('a.design_note')}</p>`;
+  }
   function previewHtml(c, lang) {
+    if (isDesign(c)) return designPreviewHtml(c);
     const rows = c.tests.map((tc, i) => `<tr><td style="width:56px">${i + 1}${tc.hidden ? ` <span class="tag">${t('hidden')}</span>` : ''}</td><td>${esc(signature(lang, c.fn[lang], tc.args))}</td><td>${esc(json(tc.expected, lang))}</td></tr>`).join('');
     return `
       <div style="display:flex;gap:6px;flex-wrap:wrap"><span class="tag">${esc(diff(c.difficulty))}</span><span class="tag">${esc(exText(c, 'topic') || '')}</span><span class="tag">${t('a.suggested', { n: c.minutes })}</span></div>
@@ -295,18 +329,24 @@
   let catSel = null, catLang = 'python';
   function renderCatalogView() {
     $('#cat-count').textContent = t('a.cat.count', { n: challenges.length });
-    $('#cat-list').innerHTML = GROUPS.map((g) => `<div class="cat-group">${diff(g)}</div>` + challenges.filter((c) => c.difficulty === g).map((c) => `
+    $('#cat-list').innerHTML = groupsFor('mixed').map((g) => `<div class="cat-group">${g.label}</div>` + g.items.map((c) => `
       <div class="row ${catSel === c.id ? 'on' : ''}" data-id="${c.id}"><div class="l1"><span class="name">${esc(exText(c, 'title'))}</span><span class="faint mono" style="font-size:12px">${c.minutes} min</span></div>
-      <div class="l2">${esc(exText(c, 'topic') || '')}<span class="dot-sep">${t('a.n_cases', { n: c.tests.length })}</span></div></div>`).join('')).join('');
+      <div class="l2">${exMeta(c)}</div></div>`).join('')).join('');
     $$('#cat-list .row').forEach((r) => r.onclick = () => { catSel = r.dataset.id; renderCatalogView(); });
     const c = chById(catSel);
     $('#cat-detail').innerHTML = c ? `<div class="preview">
-        <div class="seg" style="float:right">${['python', 'javascript'].map((l) => `<button data-l="${l}" class="${catLang === l ? 'on' : ''}">${LANG[l]}</button>`).join('')}</div>
+        ${isDesign(c) ? '' : `<div class="seg" style="float:right">${['python', 'javascript'].map((l) => `<button data-l="${l}" class="${catLang === l ? 'on' : ''}">${LANG[l]}</button>`).join('')}</div>`}
         ${previewHtml(c, catLang)}
         <button class="btn primary" style="margin-top:16px" id="cat-use">${icon('plus')} ${t('a.use_new')}</button></div>`
       : `<div class="empty-state"><div class="ico">${icon('book')}</div><h3>${t('a.nav.catalog')}</h3>${t('a.cat.empty')}</div>`;
     $$('#cat-detail .seg button').forEach((b) => b.onclick = () => { catLang = b.dataset.l; renderCatalogView(); });
-    if (c) $('#cat-use').onclick = () => { if (!form.ids.includes(c.id) && form.ids.length < 6) form.ids.push(c.id); form.lang = catLang; go('new'); };
+    if (c) $('#cat-use').onclick = () => {
+      if (isDesign(c) && form.type === 'coding') form.type = 'design';
+      if (!isDesign(c) && form.type === 'design') form.type = 'coding';
+      if (!form.ids.includes(c.id) && form.ids.length < 6) form.ids.push(c.id);
+      if (!isDesign(c)) form.lang = catLang;
+      form.minutesTouched = false; go('new');
+    };
   }
 
   // =====================================================================
@@ -329,7 +369,7 @@
         : total ? `<span class="mono">${passed}/${total}</span>` : `<span>${ago(c.createdAt)}</span>`;
       return `<div class="row ${c.id === selected ? 'on' : ''}" data-id="${c.id}">
         <div class="l1"><span class="name">${esc(c.name)}</span>${statusHtml(c)}</div>
-        <div class="l2"><span>${esc(label || '')}</span><span class="dot-sep">${LANG[c.lang]}</span><span class="dot-sep"></span>${extra}</div></div>`;
+        <div class="l2"><span>${esc(label || '')}</span><span class="dot-sep">${c.type === 'design' ? t('kind.design') : c.type === 'mixed' ? t('kind.mixed') : LANG[c.lang]}</span><span class="dot-sep"></span>${extra}</div></div>`;
     }).join('') : `<div class="empty">${all.length ? t('a.list.filter') : t('a.list.none')}</div>`;
     if ($('#cand-list').dataset.html !== html) { $('#cand-list').dataset.html = html; $('#cand-list').innerHTML = html; $$('#cand-list .row').forEach((el) => el.onclick = () => select(el.dataset.id)); }
     const lockedN = all.filter(isLocked).length;
@@ -365,7 +405,7 @@
     $('#detail').innerHTML = `
       <div class="d-head">
         <div class="t"><h2>${esc(c.name)}</h2><span id="d-status"></span><span id="d-typing"></span></div>
-        <div class="meta">${LANG[c.lang]}<span class="dot-sep">${c.minutes} min</span><span class="dot-sep">${t('a.n_ex', { n: idsOf(c).length })}</span><span class="dot-sep">${UI_LANG_NAME[c.ui || 'es']}</span>${c.email ? `<span class="dot-sep">${esc(c.email)}</span>` : ''}</div>
+        <div class="meta">${c.type && c.type !== 'coding' ? `<span class="tag kind-tag" style="margin-right:4px">${t('kind.' + c.type)}</span>` : ''}${c.type === 'design' ? '' : LANG[c.lang]}<span class="dot-sep">${c.minutes} min</span><span class="dot-sep">${t('a.n_ex', { n: idsOf(c).length })}</span><span class="dot-sep">${UI_LANG_NAME[c.ui || 'es']}</span>${c.email ? `<span class="dot-sep">${esc(c.email)}</span>` : ''}</div>
         <div class="d-actions" id="d-actions"></div>
       </div>
       <div id="d-notice"></div>
@@ -380,8 +420,9 @@
             <button class="btn sm" id="d-run">${icon('play')} ${t('a.run_all')}</button>
           </div>
           <div id="d-banner"></div>
-          <div class="editor-wrap" style="min-height:320px"><textarea id="d-code"></textarea></div>
-          <div class="results" style="height:auto;max-height:320px">
+          <div class="d-board hidden" id="d-board"></div>
+          <div class="editor-wrap" style="min-height:320px" id="d-codewrap"><textarea id="d-code"></textarea></div>
+          <div class="results" style="height:auto;max-height:320px" id="d-res">
             <div class="tabs"><button class="tab on">${t('a.results_all')}</button><span class="summary" id="d-summary"></span></div>
             <div class="results-body" id="d-results"></div>
           </div>
@@ -389,6 +430,7 @@
         <div class="d-side">
           <div class="section-title">${t('c.instructions')}</div>
           <p id="d-desc" style="margin:0;line-height:1.6"></p>
+          <div id="d-rubric"></div>
           <div class="section-title">${icon('history').replace('<svg', '<svg style="width:13px;height:13px"')} ${t('a.cand_versions')}</div>
           <div class="vlist" id="d-versions"></div>
           <div class="section-title">${t('a.activity')}</div>
@@ -396,6 +438,7 @@
         </div>
       </div>`;
     viewer = CodeMirror.fromTextArea($('#d-code'), { mode: c.lang === 'python' ? 'python' : 'javascript', lineNumbers: true, readOnly: true });
+    boardView = idsOf(c).some((id) => isDesign(chById(id))) ? AlcorBoard.create($('#d-board'), { readOnly: true }) : null;
     $('#d-follow').onchange = (e) => { follow = e.target.checked; if (follow && c.active) showExercise(c.active); };
     $('#d-run').onclick = runHidden;
     renderHeadState(); showExercise(viewEx); renderStats(); renderTimeline();
@@ -553,13 +596,21 @@
   function currentCode() {
     const c = detailCache, ch = chById(viewEx);
     if (viewingVersion) return viewingVersion.code;
-    return c.code && typeof c.code[viewEx] === 'string' ? c.code[viewEx] : (c.status === 'pending' ? '' : starter(ch.starter[c.lang]));
+    return c.code && typeof c.code[viewEx] === 'string' ? c.code[viewEx] : (c.status === 'pending' || isDesign(ch) ? '' : starter(ch.starter[c.lang]));
   }
   function showExercise(id) {
     viewEx = id; viewingVersion = null;
-    const ch = chById(id);
+    const ch = chById(id), design = isDesign(ch);
     $('#d-extitle').textContent = exText(ch, 'title');
     $('#d-desc').innerHTML = md(exText(ch, 'description'));
+    // System design: diagrama en vivo + rúbrica; coding: código + tests
+    $('#d-board').classList.toggle('hidden', !design);
+    $('#d-codewrap').classList.toggle('hidden', design);
+    $('#d-res').classList.toggle('hidden', design);
+    $('#d-run').classList.toggle('hidden', design);
+    const list = (k, cls = '') => `<div class="section-title">${t(k === 'requirements' ? 'a.requirements' : 'a.rubric')}</div><ul class="req-list ${cls}">${(exText(ch, k) || []).map((x) => `<li>${esc(x)}</li>`).join('')}</ul>`;
+    $('#d-rubric').innerHTML = design ? list('requirements') + list('rubric', 'rubric') : '';
+    if (design && boardView) boardView.reset(currentCode() || AlcorBoard.EMPTY());
     setViewer();
     $('#d-results').innerHTML = `<div class="empty">${t('a.run_hint')}</div>`;
     $('#d-summary').innerHTML = '';
@@ -567,8 +618,11 @@
   }
   function setViewer() {
     const c = detailCache;
-    const code = currentCode() || (c.lang === 'python' ? '# ' : '// ') + t('a.not_started');
-    if (viewer.getValue() !== code) { const s = viewer.getScrollInfo(); viewer.setValue(code); viewer.scrollTo(s.left, s.top); }
+    if (isDesign(chById(viewEx))) { if (boardView) boardView.setValue(currentCode() || AlcorBoard.EMPTY()); }
+    else {
+      const code = currentCode() || (c.lang === 'python' ? '# ' : '// ') + t('a.not_started');
+      if (viewer.getValue() !== code) { const s = viewer.getScrollInfo(); viewer.setValue(code); viewer.scrollTo(s.left, s.top); }
+    }
     $('#d-banner').innerHTML = viewingVersion
       ? `<div class="viewing-banner">${icon('history').replace('<svg', '<svg style="width:14px;height:14px"')}<span>${esc(t('a.viewing', { label: versionLabel(viewingVersion), t: hhmm(viewingVersion.t) }))}</span><span class="spacer"></span><button class="btn sm" id="d-live">${t('a.back_live')}</button></div>` : '';
     if (viewingVersion) $('#d-live').onclick = () => { viewingVersion = null; setViewer(); renderVersions(); };

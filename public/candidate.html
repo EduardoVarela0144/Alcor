@@ -68,11 +68,20 @@
         <h2 id="p-title"></h2>
         <div class="section-title" data-i18n="c.instructions"></div>
         <p id="p-desc"></p>
-        <div class="section-title" data-i18n="c.fn"></div>
-        <div class="example" id="p-fn"></div>
-        <div class="section-title" data-i18n="c.examples"></div>
-        <div id="p-examples"></div>
-        <p class="faint" style="font-size:12px;margin-top:10px" data-i18n="c.hidden_note"></p>
+        <div id="p-coding">
+          <div class="section-title" data-i18n="c.fn"></div>
+          <div class="example" id="p-fn"></div>
+          <div class="section-title" data-i18n="c.examples"></div>
+          <div id="p-examples"></div>
+          <p class="faint" style="font-size:12px;margin-top:10px" data-i18n="c.hidden_note"></p>
+        </div>
+        <div id="p-design" class="hidden">
+          <div class="section-title" data-i18n="c.requirements"></div>
+          <ul class="req-list" id="p-req"></ul>
+          <div class="section-title" data-i18n="c.questions"></div>
+          <ul class="req-list" id="p-q"></ul>
+          <p class="faint" style="font-size:12px;margin-top:12px" data-i18n="c.design_note"></p>
+        </div>
       </div>
     </aside>
     <main class="main">
@@ -85,8 +94,9 @@
         <button class="btn" id="btn-run"></button>
         <button class="btn primary" id="btn-submit" data-i18n="c.submit"></button>
       </div>
-      <div class="editor-wrap"><textarea id="editor"></textarea></div>
-      <div class="results">
+      <div class="design-wrap hidden" id="design-wrap"></div>
+      <div class="editor-wrap" id="code-wrap"><textarea id="editor"></textarea></div>
+      <div class="results" id="results">
         <div class="tabs">
           <button class="tab on" data-tab="tests" data-i18n="c.tab.tests"></button>
           <button class="tab" data-tab="console" data-i18n="c.tab.console"></button>
@@ -108,6 +118,7 @@
   <script src="/vendor/codemirror/addon/active-line.js"></script>
   <script src="/runner.js"></script>
   <script src="/ui.js"></script>
+  <script src="/board.js"></script>
   <script src="/candidate.js"></script>
 </body>
 </html>

@@ -20,7 +20,7 @@ const IS_PROD = process.env.NODE_ENV === 'production';
 const ADMIN_TTL_MS = 12 * 60 * 60 * 1000;
 const LANGS = ['python', 'javascript'];
 const MAX_EXERCISES = 6;
-const MAX_CODE = 100000;
+const MAX_CODE = 400000; // los diagramas de system design pesan más que el código
 const MAX_VERSIONS = 30;
 const THEMES = require('./public/themes.js').IDS; // 'system' + todos los temas disponibles
 const UI_LANGS = I18N.LANGS; // idiomas de la interfaz: es, en
@@ -104,13 +104,21 @@ function readBody(req, limit = 2 * 1024 * 1024) {
     req.on('error', reject);
   });
 }
-const challengeById = (id) => CHALLENGES.find((c) => c.id === id);
-const publicChallenge = (c, lang) => ({
-  en: c.en,
-  id: c.id, title: c.title, difficulty: c.difficulty, topic: c.topic, description: c.description,
-  fn: c.fn[lang], starter: c.starter[lang],
-  tests: c.tests.filter((t) => !t.hidden).map(({ args, expected }) => ({ args, expected })),
-});
+// Catálogo completo: problemas de programación + problemas de system design
+const DESIGNS = require('./designs');
+const ALL = CHALLENGES.concat(DESIGNS);
+const EMPTY_BOARD = JSON.stringify({ v: 1, elements: [], notes: '' });
+const challengeById = (id) => ALL.find((c) => c.id === id);
+const starterFor = (c, lang, ui) => (c.kind === 'design' ? EMPTY_BOARD : CHALLENGES.starterFor(c, lang, ui));
+const KINDS = ['coding', 'design', 'mixed'];
+// Lo que ve el candidato: sin casos ocultos ni rúbrica
+const publicChallenge = (c, lang) => (c.kind === 'design'
+  ? { id: c.id, kind: 'design', title: c.title, difficulty: c.difficulty, topic: c.topic, description: c.description,
+      requirements: c.requirements, questions: c.questions,
+      en: c.en && { title: c.en.title, topic: c.en.topic, description: c.en.description, requirements: c.en.requirements, questions: c.en.questions } }
+  : { en: c.en, id: c.id, kind: 'coding', title: c.title, difficulty: c.difficulty, topic: c.topic, description: c.description,
+      fn: c.fn[lang], starter: c.starter[lang],
+      tests: c.tests.filter((t) => !t.hidden).map(({ args, expected }) => ({ args, expected })) });
 // Mezcla código recibido ({ idEjercicio: código }) solo para ejercicios de este candidato.
 function mergeCode(cand, code) {
   if (!code || typeof code !== 'object') return;
@@ -132,7 +140,7 @@ function getCandidate(token) {
       code: {}, lastSeen: null, typingAt: null, results: {}, runs: 0, pastes: 0, blurs: 0, timeline: [],
       locked: !!p.locked, opensAt: Number(p.opensAt) || null, activatedAt: null,
       tz: validTz(p.tz) ? p.tz : 'UTC', theme: THEMES.includes(p.theme) ? p.theme : 'system', email: null, versions: {},
-      ui: UI_LANGS.includes(p.ui) ? p.ui : 'es',
+      ui: UI_LANGS.includes(p.ui) ? p.ui : 'es', type: KINDS.includes(p.type) ? p.type : 'coding',
       rebuilt: true, // creado desde el token: puede recuperarse con el respaldo del navegador
     };
     save();
@@ -304,7 +312,7 @@ async function handle(req, res) {
 
     if (p === '/api/admin/me' && m === 'GET') return send(res, 200, { ok: true, email: !!RESEND_API_KEY });
 
-    if (p === '/api/admin/challenges' && m === 'GET') return send(res, 200, CHALLENGES);
+    if (p === '/api/admin/challenges' && m === 'GET') return send(res, 200, ALL);
 
     if (p === '/api/admin/candidates' && m === 'GET') {
       const list = Object.values(db.candidates).sort((a, b) => b.createdAt - a.createdAt).map(summary);
@@ -322,6 +330,9 @@ async function handle(req, res) {
       const opensAt = activation === 'scheduled' ? Number(body.opensAt) : null;
       if (activation === 'scheduled' && !(opensAt > Date.now())) return send(res, 400, { error: E(req, 's.future') });
       const payload = { id: crypto.randomBytes(9).toString('base64url'), name, lang, challenges: ids, minutes, iat: Date.now() };
+      // Tipo de entrevista: el que eligió el admin, o se deduce de los ejercicios
+      const kinds = new Set(ids.map((id) => challengeById(id).kind || 'coding'));
+      payload.type = KINDS.includes(body.type) ? body.type : kinds.size > 1 ? 'mixed' : [...kinds][0];
       if (activation !== 'now') { payload.locked = true; if (opensAt) payload.opensAt = opensAt; }
       if (validTz(body.tz)) payload.tz = body.tz;
       if (THEMES.includes(body.theme) && body.theme !== 'system') payload.theme = body.theme;
@@ -484,11 +495,11 @@ async function handle(req, res) {
     const view = () => ({
       id: cand.id, name: cand.name, lang: cand.lang, minutes: cand.minutes, status: cand.status,
       startedAt: cand.startedAt, deadline: deadline(), serverNow: Date.now(), code: cand.code,
-      open: isOpen(cand), opensAt: cand.opensAt, tz: cand.tz, theme: cand.theme, ui: cand.ui || 'es', versions: cand.versions || {},
+      open: isOpen(cand), opensAt: cand.opensAt, tz: cand.tz, theme: cand.theme, ui: cand.ui || 'es', type: cand.type || 'coding', versions: cand.versions || {},
       challenges: cand.challengeIds.map((id) => publicChallenge(challengeById(id), cand.lang)),
     });
     const fillStarters = () => cand.challengeIds.forEach((id) => {
-      if (typeof cand.code[id] !== 'string') cand.code[id] = CHALLENGES.starterFor(challengeById(id), cand.lang, cand.ui);
+      if (typeof cand.code[id] !== 'string') cand.code[id] = starterFor(challengeById(id), cand.lang, cand.ui);
     });
 
     if (!mc[2] && m === 'GET') return send(res, 200, view());
