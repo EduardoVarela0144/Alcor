@@ -127,7 +127,10 @@
   // Ejercicios agrupados: los de programación por dificultad y los de diseño aparte
   const groupsFor = (type) => [
     ...(type !== 'design' ? GROUPS.map((g) => ({ label: diff(g), items: challenges.filter((c) => !isDesign(c) && c.difficulty === g) })) : []),
-    ...(type !== 'coding' ? [{ label: t('a.group.design'), items: challenges.filter(isDesign) }] : []),
+    ...(type !== 'coding' ? [
+      { label: t('a.group.ai'), items: challenges.filter((c) => isDesign(c) && c.track === 'ai') },
+      { label: t('a.group.design'), items: challenges.filter((c) => isDesign(c) && c.track !== 'ai') },
+    ] : []),
   ].filter((g) => g.items.length);
   const exMeta = (c) => isDesign(c)
     ? `${diff(c.difficulty)} · ${c.minutes} min · ${t('a.n_req', { n: (exText(c, 'requirements') || []).length })}`
@@ -291,7 +294,7 @@
   function designPreviewHtml(c) {
     const list = (arr, cls = '') => `<ul class="req-list ${cls}">${(arr || []).map((x) => `<li>${esc(x)}</li>`).join('')}</ul>`;
     return `
-      <div style="display:flex;gap:6px;flex-wrap:wrap"><span class="tag kind-tag">${t('kind.design')}</span><span class="tag">${esc(diff(c.difficulty))}</span><span class="tag">${t('a.suggested', { n: c.minutes })}</span></div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap"><span class="tag kind-tag">${t('kind.design')}</span>${c.track === 'ai' ? `<span class="tag kind-tag">${esc(exText(c, 'topic'))}</span>` : ''}<span class="tag">${esc(diff(c.difficulty))}</span><span class="tag">${t('a.suggested', { n: c.minutes })}</span></div>
       <h2>${esc(exText(c, 'title'))}</h2>
       <div class="section-title">${t('a.instr_cand')}</div>
       <p class="desc">${md(exText(c, 'description'))}</p>

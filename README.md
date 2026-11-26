@@ -10,7 +10,9 @@ de administrador al que solo tú tienes acceso.
 - **System design**: el candidato dibuja la arquitectura en un **pizarrón** (cajas, bases de datos, círculos, rombos,
   flechas que se pegan a las figuras, texto, lápiz, colores, líneas punteadas, deshacer/rehacer, zoom) y escribe sus
   decisiones en las notas. Tú ves el diagrama en vivo junto con los requerimientos y una **rúbrica** que solo ves tú,
-  y puedes descargarlo en PNG. 6 problemas: acortador de URLs, rate limiter, notificaciones, mensajería, feed y archivos.
+  y puedes descargarlo en PNG. 6 problemas clásicos (acortador de URLs, rate limiter, notificaciones, mensajería, feed,
+  archivos) y 5 de **IA / RAG de 60 minutos** (asistente RAG sobre documentos, pipeline de ingesta y embeddings,
+  agente de soporte con herramientas, gateway de LLMs, plataforma de evaluación y observabilidad).
 - **Mixta**: problemas de programación y de diseño en la misma evaluación.
 
 - **Sin base de datos ni dependencias**: un solo `server.js` con Node puro. El estado vive en `data/db.json`.

@@ -3,8 +3,82 @@
 // Cada problema trae su traducción al inglés en `en`.
 
 const D = (o) => ({ kind: 'design', ...o });
+// Problemas de IA / RAG: 60 minutos, aparecen en su propio grupo del catálogo
+const AI = (o) => D({ track: 'ai', difficulty: 'Difícil', minutes: 60, topic: 'IA / RAG', ...o, en: { topic: 'AI / RAG', ...o.en } });
 
 module.exports = [
+  // ---------------- IA / RAG (60 min) ----------------
+  AI({
+    id: 'ai-rag-docs', title: 'Asistente RAG sobre documentos internos',
+    description: 'Diseña un asistente que responde preguntas de los empleados usando los documentos internos de la empresa (wikis, PDFs, tickets, Drive). Son 2 millones de documentos que cambian todos los días, y cada respuesta debe citar sus fuentes.',
+    requirements: ['Ingerir y mantener actualizados 2 millones de documentos de varias fuentes', 'Responder en menos de 5 segundos con citas a los documentos usados', 'Respetar permisos: nadie ve contenido de documentos a los que no tiene acceso', 'Reducir alucinaciones: decir "no sé" cuando no hay información', 'Medir la calidad de las respuestas y mejorarla con el tiempo'],
+    questions: ['¿Cómo partes (chunking) los documentos y qué metadatos guardas?', '¿Qué modelo de embeddings y qué base vectorial usas? ¿Búsqueda híbrida?', '¿Cómo aplicas los permisos en la búsqueda?', '¿Cómo armas el prompt y controlas el tamaño del contexto?', '¿Cómo evalúas que las respuestas sean correctas y estén bien fundamentadas?', '¿Qué haces cuando un documento cambia o se borra?'],
+    rubric: ['Pipeline de ingesta: conectores, parsing/OCR, limpieza, chunking con solapamiento y metadatos', 'Embeddings en lote e incrementales, reindexación al cambiar documentos', 'Base vectorial + búsqueda híbrida (BM25 + vectores) y re-ranking', 'Filtrado por permisos (ACL) dentro de la búsqueda, no después', 'Construcción del prompt: top-k, presupuesto de tokens, instrucciones de citar y abstenerse', 'Citas verificables y manejo de "no sé"', 'Evaluación: conjunto dorado, métricas de recuperación (recall@k) y de fidelidad, LLM-as-judge, feedback de usuarios', 'Latencia y costo: caché semántico, streaming, modelos más chicos donde se pueda', 'Observabilidad: trazas por pregunta (consulta, chunks, prompt, respuesta)'],
+    en: {
+      title: 'RAG assistant over internal documents',
+      description: 'Design an assistant that answers employee questions using the company’s internal documents (wikis, PDFs, tickets, Drive). There are 2 million documents that change every day, and every answer must cite its sources.',
+      requirements: ['Ingest and keep up to date 2 million documents from several sources', 'Answer in under 5 seconds with citations to the documents used', 'Respect permissions: nobody sees content from documents they cannot access', 'Reduce hallucinations: say "I don’t know" when there is no information', 'Measure answer quality and improve it over time'],
+      questions: ['How do you chunk the documents and what metadata do you keep?', 'Which embedding model and vector store do you use? Hybrid search?', 'How do you enforce permissions during retrieval?', 'How do you build the prompt and control the context size?', 'How do you evaluate that answers are correct and grounded?', 'What happens when a document changes or is deleted?'],
+      rubric: ['Ingestion pipeline: connectors, parsing/OCR, cleaning, overlapping chunks with metadata', 'Batch and incremental embeddings, reindexing when documents change', 'Vector store + hybrid search (BM25 + vectors) and re-ranking', 'Permission (ACL) filtering inside retrieval, not afterwards', 'Prompt construction: top-k, token budget, instructions to cite and abstain', 'Verifiable citations and handling "I don’t know"', 'Evaluation: golden set, retrieval metrics (recall@k) and faithfulness, LLM-as-judge, user feedback', 'Latency and cost: semantic cache, streaming, smaller models where possible', 'Observability: per-question traces (query, chunks, prompt, answer)'],
+    },
+  }),
+  AI({
+    id: 'ai-ingestion-pipeline', title: 'Pipeline de ingesta y embeddings a escala',
+    description: 'Diseña el pipeline que procesa 50,000 documentos nuevos por hora (PDFs escaneados, HTML, Word, hojas de cálculo) y los deja listos para búsqueda semántica. Varios equipos de producto consumen el índice resultante.',
+    requirements: ['Extraer texto, tablas e imágenes, incluido OCR para escaneos', 'Generar embeddings sin pasarse de los límites de la API ni del presupuesto', 'Procesar solo lo que cambió (incremental) y evitar duplicados', 'Poder cambiar de modelo de embeddings sin apagar la búsqueda', 'Reintentar fallas y saber en qué estado está cada documento'],
+    questions: ['¿Cómo divides el pipeline en etapas y cómo se comunican?', '¿Cómo manejas los límites de tasa y el costo del proveedor de embeddings?', '¿Cómo detectas que un documento ya fue procesado?', '¿Cómo migras a un nuevo modelo de embeddings sin downtime?', '¿Qué monitoreas para saber que la calidad no se degradó?'],
+    rubric: ['Etapas desacopladas con colas: extracción, limpieza, chunking, embeddings, indexado', 'Parsing por tipo de archivo + OCR, preservando estructura (títulos, tablas)', 'Hash de contenido para deduplicar y procesar incrementalmente', 'Batching, rate limiting, reintentos con backoff y dead-letter queue', 'Control de costo: caché de embeddings, priorización, modelos open-source auto-hospedados como opción', 'Versionado de índices y migración en paralelo (dual-write / blue-green) al cambiar de modelo', 'Estado por documento y reprocesamiento idempotente', 'Métricas: throughput, latencia por etapa, errores, muestras de calidad de chunks'],
+    en: {
+      title: 'Ingestion and embeddings pipeline at scale',
+      description: 'Design the pipeline that processes 50,000 new documents per hour (scanned PDFs, HTML, Word, spreadsheets) and makes them ready for semantic search. Several product teams consume the resulting index.',
+      requirements: ['Extract text, tables and images, including OCR for scans', 'Generate embeddings without exceeding API limits or the budget', 'Process only what changed (incremental) and avoid duplicates', 'Be able to switch embedding models without taking search down', 'Retry failures and know the state of every document'],
+      questions: ['How do you split the pipeline into stages and how do they communicate?', 'How do you handle the embedding provider’s rate limits and cost?', 'How do you detect that a document was already processed?', 'How do you migrate to a new embedding model with no downtime?', 'What do you monitor to know quality has not degraded?'],
+      rubric: ['Decoupled stages with queues: extraction, cleaning, chunking, embeddings, indexing', 'Per-file-type parsing + OCR, preserving structure (headings, tables)', 'Content hashing for deduplication and incremental processing', 'Batching, rate limiting, retries with backoff and a dead-letter queue', 'Cost control: embedding cache, prioritization, self-hosted open-source models as an option', 'Index versioning and parallel migration (dual-write / blue-green) when switching models', 'Per-document state and idempotent reprocessing', 'Metrics: throughput, per-stage latency, errors, chunk quality samples'],
+    },
+  }),
+  AI({
+    id: 'ai-support-agent', title: 'Agente de soporte con herramientas',
+    description: 'Diseña un agente de IA que atiende el chat de soporte de una tienda en línea: responde dudas con la base de conocimiento y puede ejecutar acciones (consultar pedidos, iniciar reembolsos, cambiar direcciones). Atiende 20,000 conversaciones al día.',
+    requirements: ['Responder con información de la base de conocimiento y del pedido del cliente', 'Ejecutar acciones reales mediante herramientas (APIs internas)', 'Nunca hacer reembolsos por encima de un límite sin aprobación humana', 'Pasar la conversación a un humano cuando haga falta, con contexto', 'Resistir intentos de manipulación (prompt injection)'],
+    questions: ['¿Cómo decide el agente qué herramienta usar y con qué datos?', '¿Qué guardrails pones antes y después de cada acción?', '¿Cómo manejas la memoria de la conversación y el contexto del cliente?', '¿Cuándo y cómo escalas a un humano?', '¿Cómo pruebas el agente antes de cada cambio de prompt o modelo?'],
+    rubric: ['Orquestador del agente: loop de razonamiento con function calling y límites de pasos', 'Herramientas con esquemas estrictos, permisos mínimos y validación de parámetros', 'Guardrails: políticas (montos, identidad verificada), confirmación del usuario, aprobación humana', 'Defensa contra prompt injection: separar instrucciones de datos, no confiar en contenido recuperado', 'RAG sobre la base de conocimiento + contexto del pedido', 'Memoria: resumen de conversación, estado estructurado del caso', 'Escalamiento a humano con traspaso de contexto', 'Evaluación: conversaciones de prueba, simulación, métricas de resolución y de errores en acciones; auditoría de cada acción'],
+    en: {
+      title: 'Support agent with tools',
+      description: 'Design an AI agent that handles the support chat of an online store: it answers questions using the knowledge base and can take actions (look up orders, start refunds, change addresses). It handles 20,000 conversations a day.',
+      requirements: ['Answer with information from the knowledge base and the customer’s order', 'Take real actions through tools (internal APIs)', 'Never refund above a limit without human approval', 'Hand the conversation to a human when needed, with context', 'Resist manipulation attempts (prompt injection)'],
+      questions: ['How does the agent decide which tool to use and with which data?', 'What guardrails do you put before and after each action?', 'How do you handle conversation memory and customer context?', 'When and how do you escalate to a human?', 'How do you test the agent before every prompt or model change?'],
+      rubric: ['Agent orchestrator: reasoning loop with function calling and step limits', 'Tools with strict schemas, least privilege and parameter validation', 'Guardrails: policies (amounts, verified identity), user confirmation, human approval', 'Prompt injection defense: separate instructions from data, do not trust retrieved content', 'RAG over the knowledge base + order context', 'Memory: conversation summary, structured case state', 'Escalation to a human with context handoff', 'Evaluation: test conversations, simulation, resolution and action-error metrics; audit log of every action'],
+    },
+  }),
+  AI({
+    id: 'ai-llm-gateway', title: 'Gateway de LLMs para toda la empresa',
+    description: 'Diseña un gateway interno por el que pasan todas las llamadas a modelos de lenguaje de la empresa (varios proveedores y modelos propios). Lo usan 40 equipos y hoy el gasto en LLMs crece sin control.',
+    requirements: ['Una sola API para varios proveedores y modelos', 'Presupuestos y límites por equipo, con reportes de costo', 'Fallback automático si un proveedor falla o está lento', 'Quitar datos sensibles (PII) antes de enviarlos a proveedores externos', 'Registrar cada llamada para auditoría y depuración'],
+    questions: ['¿Cómo enrutas cada petición al modelo adecuado?', '¿Dónde y cómo cuentas tokens y costo?', '¿Cómo implementas caché sin devolver respuestas incorrectas?', '¿Cómo detectas y ocultas PII?', '¿Qué pasa con el streaming de respuestas?'],
+    rubric: ['API unificada y adaptadores por proveedor', 'Ruteo por costo/latencia/calidad y fallbacks con circuit breaker', 'Rate limits y presupuestos por equipo; conteo de tokens y atribución de costo', 'Caché exacta y semántica con criterios de cuándo usarla', 'Redacción de PII y políticas de qué datos pueden salir', 'Soporte de streaming y timeouts', 'Logging y trazas con retención y control de acceso', 'Alta disponibilidad del gateway (no debe ser un punto único de falla)'],
+    en: {
+      title: 'Company-wide LLM gateway',
+      description: 'Design an internal gateway that every language-model call in the company goes through (several providers and in-house models). 40 teams use it and LLM spend is currently growing out of control.',
+      requirements: ['A single API for several providers and models', 'Budgets and limits per team, with cost reports', 'Automatic fallback if a provider fails or is slow', 'Strip sensitive data (PII) before sending it to external providers', 'Log every call for auditing and debugging'],
+      questions: ['How do you route each request to the right model?', 'Where and how do you count tokens and cost?', 'How do you add caching without returning wrong answers?', 'How do you detect and mask PII?', 'What about streaming responses?'],
+      rubric: ['Unified API and per-provider adapters', 'Routing by cost/latency/quality and fallbacks with a circuit breaker', 'Per-team rate limits and budgets; token counting and cost attribution', 'Exact and semantic caching with criteria for when to use it', 'PII redaction and policies on what data may leave', 'Streaming support and timeouts', 'Logging and traces with retention and access control', 'Gateway high availability (it must not be a single point of failure)'],
+    },
+  }),
+  AI({
+    id: 'ai-eval-platform', title: 'Plataforma de evaluación y observabilidad de LLMs',
+    description: 'Diseña la plataforma que usan los equipos para evaluar sus aplicaciones con LLMs antes de cada release y monitorearlas en producción (chatbots, RAG, agentes). Hoy los cambios de prompt rompen cosas sin que nadie se entere.',
+    requirements: ['Correr suites de evaluación sobre conjuntos de prueba versionados', 'Comparar dos versiones (prompt, modelo, retrieval) lado a lado', 'Bloquear un deploy si la calidad baja de un umbral', 'Ver trazas de producción y detectar regresiones', 'Convertir fallas de producción en nuevos casos de prueba'],
+    questions: ['¿Qué métricas usas y cómo calificas respuestas abiertas?', '¿Cómo haces confiable el uso de un LLM como juez?', '¿Cómo integras la evaluación al CI/CD?', '¿Cómo muestreas producción sin violar privacidad?', '¿Cómo manejas el costo de correr miles de evaluaciones?'],
+    rubric: ['Datasets versionados y casos etiquetados (incluyendo casos difíciles y adversariales)', 'Métricas deterministas + LLM-as-judge con rúbricas, calibración contra humanos', 'Runner distribuido con caché de resultados y control de costo', 'Comparaciones A/B y reportes de regresión', 'Integración con CI/CD y umbrales de bloqueo', 'Tracing en producción (spans de retrieval, prompts, tools), muestreo y redacción de PII', 'Ciclo de feedback: fallas de producción → nuevos casos de prueba', 'Monitoreo online: drift, tasa de "no sé", feedback de usuarios'],
+    en: {
+      title: 'LLM evaluation and observability platform',
+      description: 'Design the platform teams use to evaluate their LLM applications before every release and monitor them in production (chatbots, RAG, agents). Today prompt changes break things without anyone noticing.',
+      requirements: ['Run evaluation suites on versioned test sets', 'Compare two versions (prompt, model, retrieval) side by side', 'Block a deploy if quality drops below a threshold', 'View production traces and detect regressions', 'Turn production failures into new test cases'],
+      questions: ['Which metrics do you use and how do you grade open-ended answers?', 'How do you make an LLM-as-judge reliable?', 'How do you integrate evaluation into CI/CD?', 'How do you sample production without violating privacy?', 'How do you handle the cost of running thousands of evaluations?'],
+      rubric: ['Versioned datasets and labeled cases (including hard and adversarial ones)', 'Deterministic metrics + LLM-as-judge with rubrics, calibrated against humans', 'Distributed runner with result caching and cost control', 'A/B comparisons and regression reports', 'CI/CD integration and blocking thresholds', 'Production tracing (retrieval, prompt and tool spans), sampling and PII redaction', 'Feedback loop: production failures → new test cases', 'Online monitoring: drift, "I don’t know" rate, user feedback'],
+    },
+  }),
+  // ---------------- Clásicos ----------------
   D({
     id: 'sd-url-shortener', title: 'Acortador de URLs', difficulty: 'Media', topic: 'Diseño de sistemas', minutes: 35,
     description: 'Diseña un servicio como bit.ly que convierte URLs largas en links cortos y redirige a quien los abre. Se crean 100 millones de links al mes y hay 100 lecturas por cada escritura.',
