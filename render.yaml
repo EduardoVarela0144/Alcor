@@ -19,3 +19,19 @@ services:
         sync: false
       - key: ADMIN_EMAIL
         sync: false
+      # Java: URL y token del servicio alcor-runner (abajo)
+      - key: RUNNER_URL
+        sync: false
+      - key: RUNNER_TOKEN
+        sync: false
+  # Ejecuta el código Java de los candidatos, aislado de las credenciales de Alcor
+  - type: web
+    name: alcor-runner
+    runtime: docker
+    plan: free
+    dockerfilePath: ./runner/Dockerfile
+    dockerContext: ./runner
+    healthCheckPath: /healthz
+    envVars:
+      - key: RUNNER_TOKEN
+        sync: false

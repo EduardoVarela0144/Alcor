@@ -145,9 +145,14 @@
   const ic = (n) => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${I[n]}</svg>`;
 
   // ---------- componente interactivo ----------
+  // Selección múltiple (Shift+clic o recuadro), puntos de conexión en las figuras y
+  // "conectar varios a uno": con varias figuras seleccionadas, arrastrar desde el punto
+  // de cualquiera crea una flecha desde cada una hacia la figura donde sueltas.
   function create(root, { readOnly = false, onChange = () => {}, onPaste = () => {} } = {}) {
     let state = EMPTY();
-    let selected = null;
+    let sel = new Set();      // ids seleccionados
+    let primary = null;       // último seleccionado (el que se edita/redimensiona)
+    let hoverId = null;       // figura bajo el puntero (muestra sus puntos de conexión)
     let tool = 'select';
     let color = 'ink';
     let view = { x: 0, y: 0, z: 1 };
@@ -168,7 +173,8 @@
           <button type="button" class="b-btn" data-act="del" title="${t('b.del')} (Supr)">${ic('trash')}</button>
           <button type="button" class="b-btn" data-act="undo" title="${t('b.undo')} (Ctrl+Z)">${ic('undo')}</button>
           <button type="button" class="b-btn" data-act="redo" title="${t('b.redo')} (Ctrl+Shift+Z)">${ic('redo')}</button>
-        </div>`}
+        </div>
+        <span class="b-selinfo" data-selinfo></span>`}
         <div class="b-spacer"></div>
         <div class="b-group">
           <button type="button" class="b-btn" data-act="zout" title="${t('b.zoom_out')}">${ic('minus')}</button>
@@ -195,7 +201,17 @@
     const byId = (id) => state.elements.find((e) => e.id === id);
     const emit = () => onChange(getValue());
     const snapshot = () => { undo.push(JSON.stringify(state.elements)); if (undo.length > 100) undo.shift(); redo = []; };
-    function getValue() { return JSON.stringify({ v: 1, elements: state.elements, notes: state.notes }); }
+    function getValue() { return JSON.stringify({ v: 1, elements: state.elements.map(clean), notes: state.notes }); }
+    const clean = (e) => { const c = { ...e }; delete c._fresh; return c; };
+    const selected = () => [...sel].map(byId).filter(Boolean);
+    const selShapes = () => selected().filter((e) => SHAPES.includes(e.type));
+    function select(id, add = false) {
+      if (!add) sel = new Set();
+      if (id) { if (add && sel.has(id)) sel.delete(id); else sel.add(id); }
+      primary = id && sel.has(id) ? id : [...sel].pop() || null;
+      paint();
+    }
+    const clearSel = () => { sel = new Set(); primary = null; };
 
     // ---------- pintar ----------
     function applyView() {
@@ -210,36 +226,68 @@
       hint.classList.toggle('hidden', readOnly || state.elements.length > 0);
       if (!readOnly) {
         root.querySelectorAll('[data-tool]').forEach((b) => b.classList.toggle('on', b.dataset.tool === tool));
-        root.querySelectorAll('[data-color]').forEach((b) => b.classList.toggle('on', b.dataset.color === ((selected && byId(selected) && byId(selected).color) || color)));
+        const pc = primary && byId(primary) && byId(primary).color;
+        root.querySelectorAll('[data-color]').forEach((b) => b.classList.toggle('on', b.dataset.color === (pc || color)));
+        const info = root.querySelector('[data-selinfo]');
+        const n = sel.size, ns = selShapes().length;
+        if (info) info.textContent = n > 1 ? (ns > 1 ? t('b.sel_n_connect', { n }) : t('b.sel_n', { n })) : '';
       }
       stage.dataset.tool = tool;
     }
+    // Puntos de conexión: centro de cada lado de la figura
+    const ports = (e) => [[e.x + e.w / 2, e.y], [e.x + e.w, e.y + e.h / 2], [e.x + e.w / 2, e.y + e.h], [e.x, e.y + e.h / 2]];
     function paintOverlay() {
-      const el = selected && byId(selected);
-      if (!el || readOnly) { overlay.innerHTML = ''; return; }
+      if (readOnly) { overlay.innerHTML = ''; return; }
       const z = view.z, hs = 8 / z, sw = 1.25 / z;
-      if (el.type === 'arrow') {
-        const [a, b] = arrowEnds(el, state.elements);
-        overlay.innerHTML = [['a0', a], ['a1', b]].map(([h, p]) => `<circle data-handle="${h}" cx="${p.x}" cy="${p.y}" r="${hs * 0.7}" class="b-handle" stroke-width="${sw}"/>`).join('');
-        return;
+      let html = '';
+      const single = sel.size === 1 && byId(primary);
+      for (const el of selected()) {
+        if (el.type === 'arrow') {
+          const [a, b] = arrowEnds(el, state.elements);
+          html += single ? [['a0', a], ['a1', b]].map(([h, p]) => `<circle data-handle="${h}" cx="${p.x}" cy="${p.y}" r="${hs * 0.7}" class="b-handle" stroke-width="${sw}"/>`).join('')
+            : `<line x1="${a.x}" y1="${a.y}" x2="${b.x}" y2="${b.y}" class="b-sel" stroke-width="${4 / z}" stroke-opacity=".35"/>`;
+          continue;
+        }
+        const b = bbox(el, state.elements), pad = 5 / z;
+        html += `<rect x="${b.x - pad}" y="${b.y - pad}" width="${b.w + pad * 2}" height="${b.h + pad * 2}" class="b-sel" stroke-width="${sw}" stroke-dasharray="${4 / z} ${3 / z}"/>`;
+        if (single && SHAPES.includes(el.type)) {
+          html += [['nw', b.x, b.y], ['ne', b.x + b.w, b.y], ['sw', b.x, b.y + b.h], ['se', b.x + b.w, b.y + b.h]]
+            .map(([h, x, y]) => `<rect data-handle="${h}" x="${x - hs / 2}" y="${y - hs / 2}" width="${hs}" height="${hs}" rx="${2 / z}" class="b-handle" stroke-width="${sw}"/>`).join('');
+        }
       }
-      const b = bbox(el, state.elements), pad = 5 / z;
-      let html = `<rect x="${b.x - pad}" y="${b.y - pad}" width="${b.w + pad * 2}" height="${b.h + pad * 2}" class="b-sel" stroke-width="${sw}" stroke-dasharray="${4 / z} ${3 / z}"/>`;
-      if (SHAPES.includes(el.type)) {
-        html += [['nw', b.x, b.y], ['ne', b.x + b.w, b.y], ['sw', b.x, b.y + b.h], ['se', b.x + b.w, b.y + b.h]]
-          .map(([h, x, y]) => `<rect data-handle="${h}" x="${x - hs / 2}" y="${y - hs / 2}" width="${hs}" height="${hs}" rx="${2 / z}" class="b-handle" stroke-width="${sw}"/>`).join('');
+      // puntos de conexión en las figuras seleccionadas y en la que está bajo el puntero
+      if (tool === 'select' && !(drag && drag.mode !== 'connect')) {
+        const ids = new Set(selShapes().map((e) => e.id)); if (hoverId && byId(hoverId)) ids.add(hoverId);
+        for (const id of ids) {
+          const e = byId(id); if (!e || !SHAPES.includes(e.type)) continue;
+          html += ports(e).map(([x, y]) => `<circle data-connect="${e.id}" cx="${x}" cy="${y}" r="${5.5 / z}" class="b-port" stroke-width="${sw}"><title>${t('b.connect')}</title></circle>`).join('');
+        }
+      }
+      // vista previa: flechas al arrastrar desde un punto, recuadro de selección
+      if (drag && drag.mode === 'connect') {
+        const target = drag.target && byId(drag.target);
+        for (const sid of drag.sources) {
+          const s = byId(sid); if (!s) continue;
+          const end = target ? center(target) : drag.p;
+          const a = edgePoint(s, end), bpt = target ? edgePoint(target, center(s)) : end;
+          html += `<line x1="${a.x}" y1="${a.y}" x2="${bpt.x}" y2="${bpt.y}" class="b-ghost" stroke-width="${2 / z}" stroke-dasharray="${5 / z} ${4 / z}"/>`;
+        }
+        if (target) { const b = bbox(target), pad = 6 / z; html += `<rect x="${b.x - pad}" y="${b.y - pad}" width="${b.w + pad * 2}" height="${b.h + pad * 2}" rx="${8 / z}" class="b-target" stroke-width="${2 / z}"/>`; }
+      }
+      if (drag && drag.mode === 'marquee') {
+        const m = drag.rect;
+        html += `<rect x="${m.x}" y="${m.y}" width="${m.w}" height="${m.h}" class="b-marquee" stroke-width="${sw}"/>`;
       }
       overlay.innerHTML = html;
     }
-    const setTool = (k) => { tool = k; if (k !== 'select') selected = null; paint(); };
-    const select = (id) => { selected = id; paint(); };
+    const setTool = (k) => { tool = k; if (k !== 'select') clearSel(); paint(); };
 
     // ---------- coordenadas ----------
     const toWorld = (e) => { const r = svg.getBoundingClientRect(); return { x: (e.clientX - r.left - view.x) / view.z, y: (e.clientY - r.top - view.y) / view.z }; };
-    const shapeAt = (p, exclude) => {
+    const shapeAt = (p, exclude = []) => {
       for (let i = state.elements.length - 1; i >= 0; i--) {
         const e = state.elements[i];
-        if (!SHAPES.includes(e.type) || e.id === exclude) continue;
+        if (!SHAPES.includes(e.type) || exclude.includes(e.id)) continue;
         if (p.x >= e.x - 6 && p.x <= e.x + e.w + 6 && p.y >= e.y - 6 && p.y <= e.y + e.h + 6) return e;
       }
       return null;
@@ -287,7 +335,7 @@
       if (el) {
         if (el.text !== val) { if (!el._fresh) snapshot(); el.text = val; }
         delete el._fresh;
-        if (el.type === 'text' && !val) { state.elements = state.elements.filter((e) => e !== el); selected = null; }
+        if (el.type === 'text' && !val) { state.elements = state.elements.filter((e) => e !== el); sel.delete(el.id); if (primary === el.id) primary = null; }
       }
       paint(); emit();
     }
@@ -299,34 +347,43 @@
 
     // ---------- acciones ----------
     function remove() {
-      if (!selected) return;
+      if (!sel.size) return;
       snapshot();
-      const id = selected;
-      state.elements = state.elements.filter((e) => e.id !== id);
-      // flechas que apuntaban a la figura quedan sueltas en su última posición
-      state.elements.forEach((e) => {
-        if (e.type !== 'arrow') return;
-        ['from', 'to'].forEach((k) => { if (e[k] && e[k].id === id) e[k] = { x: 0, y: 0, _lost: true }; });
-      });
-      state.elements = state.elements.filter((e) => !(e.type === 'arrow' && (e.from._lost || e.to._lost)));
-      selected = null; paint(); emit();
+      const ids = new Set(sel);
+      state.elements = state.elements.filter((e) => !ids.has(e.id));
+      // las flechas conectadas a una figura borrada también se borran
+      state.elements = state.elements.filter((e) => !(e.type === 'arrow' && ((e.from.id && ids.has(e.from.id)) || (e.to.id && ids.has(e.to.id)))));
+      clearSel(); paint(); emit();
     }
     function duplicate() {
-      const el = selected && byId(selected); if (!el || el.type === 'arrow') return;
+      const els = selected().filter((e) => e.type !== 'arrow'); if (!els.length) return;
       snapshot();
-      const c = JSON.parse(JSON.stringify(el)); c.id = uid();
-      if (c.type === 'pen') c.points = c.points.map(([x, y]) => [x + 20, y + 20]); else { c.x += 20; c.y += 20; }
-      state.elements.push(c); selected = c.id; paint(); emit();
+      const map = {};
+      const copies = els.map((el) => {
+        const c = JSON.parse(JSON.stringify(el)); c.id = uid(); map[el.id] = c.id;
+        if (c.type === 'pen') c.points = c.points.map(([x, y]) => [x + 20, y + 20]); else { c.x += 20; c.y += 20; }
+        return c;
+      });
+      // también copia las flechas que unen figuras duplicadas
+      const arrows = state.elements.filter((a) => a.type === 'arrow' && a.from.id && a.to.id && map[a.from.id] && map[a.to.id])
+        .map((a) => ({ ...JSON.parse(JSON.stringify(a)), id: uid(), from: { id: map[a.from.id] }, to: { id: map[a.to.id] } }));
+      state.elements.push(...copies, ...arrows);
+      sel = new Set(copies.map((c) => c.id)); primary = copies[copies.length - 1].id;
+      paint(); emit();
     }
-    function doUndo() { if (!undo.length) return; redo.push(JSON.stringify(state.elements)); state.elements = JSON.parse(undo.pop()); selected = null; paint(); emit(); }
-    function doRedo() { if (!redo.length) return; undo.push(JSON.stringify(state.elements)); state.elements = JSON.parse(redo.pop()); selected = null; paint(); emit(); }
+    function doUndo() { if (!undo.length) return; redo.push(JSON.stringify(state.elements)); state.elements = JSON.parse(undo.pop()); clearSel(); paint(); emit(); }
+    function doRedo() { if (!redo.length) return; undo.push(JSON.stringify(state.elements)); state.elements = JSON.parse(redo.pop()); clearSel(); paint(); emit(); }
     function setColor(c) {
       color = c;
-      const el = selected && byId(selected);
-      if (el && el.color !== c) { snapshot(); el.color = c; emit(); }
+      const els = selected().filter((e) => e.color !== c);
+      if (els.length) { snapshot(); els.forEach((e) => { e.color = c; }); emit(); }
       paint();
     }
-    function toggleDash() { const el = selected && byId(selected); if (!el || el.type === 'text') return; snapshot(); el.dash = !el.dash; paint(); emit(); }
+    function toggleDash() {
+      const els = selected().filter((e) => e.type !== 'text'); if (!els.length) return;
+      snapshot(); const on = !els.every((e) => e.dash); els.forEach((e) => { e.dash = on; }); paint(); emit();
+    }
+    function selectAll() { sel = new Set(state.elements.map((e) => e.id)); primary = [...sel].pop() || null; paint(); }
     async function exportPng() {
       const svgStr = toSVG(getValue(), { resolve: true });
       const img = new Image();
@@ -336,6 +393,14 @@
       const ctx = c.getContext('2d'); ctx.scale(2, 2); ctx.drawImage(img, 0, 0);
       URL.revokeObjectURL(url);
       const a = document.createElement('a'); a.download = 'diagrama.png'; a.href = c.toDataURL('image/png'); a.click();
+    }
+    // Crea flechas desde cada figura de `sources` hacia `targetId` (sin duplicar las que ya existen)
+    function connect(sources, targetId) {
+      const exists = (s) => state.elements.some((a) => a.type === 'arrow' && a.from.id === s && a.to.id === targetId);
+      const made = sources.filter((s) => s !== targetId && byId(s) && !exists(s)).map((s) => ({ id: uid(), type: 'arrow', from: { id: s }, to: { id: targetId }, text: '', color }));
+      if (!made.length) return [];
+      state.elements.push(...made);
+      return made;
     }
 
     root.querySelector('.b-tools').addEventListener('click', (e) => {
@@ -349,6 +414,11 @@
     });
 
     // ---------- puntero ----------
+    const newText = (p) => {
+      snapshot();
+      const el2 = { id: uid(), type: 'text', x: r1(p.x), y: r1(p.y - 12), text: '', color, size: 18, _fresh: true };
+      state.elements.push(el2); sel = new Set([el2.id]); primary = el2.id; editText(el2);
+    };
     svg.addEventListener('pointerdown', (e) => {
       if (editing) commitText();
       e.preventDefault(); // evita que el navegador mueva el foco y se lo quite al cuadro de texto
@@ -358,20 +428,25 @@
       if (readOnly || e.button === 1 || space) { drag = { mode: 'pan', sx: e.clientX, sy: e.clientY, vx: view.x, vy: view.y }; return; }
       // Doble clic propio: el evento dblclick del navegador falla porque el SVG se vuelve a pintar entre clics
       const now = Date.now();
-      if (tool === 'select' && lastDown && now - lastDown.t < 450 && Math.hypot(e.clientX - lastDown.x, e.clientY - lastDown.y) < 6) {
+      if (tool === 'select' && !e.shiftKey && lastDown && now - lastDown.t < 450 && Math.hypot(e.clientX - lastDown.x, e.clientY - lastDown.y) < 6) {
         lastDown = null;
         const g2 = e.target.closest('[data-id]'), hit2 = g2 && byId(g2.dataset.id);
-        if (hit2 && hit2.type !== 'pen') { selected = hit2.id; editText(hit2); }
-        else if (!hit2) {
-          snapshot();
-          const el2 = { id: uid(), type: 'text', x: r1(p.x), y: r1(p.y - 12), text: '', color, size: 18, _fresh: true };
-          state.elements.push(el2); selected = el2.id; editText(el2);
-        }
+        if (hit2 && hit2.type !== 'pen') { sel = new Set([hit2.id]); primary = hit2.id; editText(hit2); }
+        else if (!hit2) newText(p);
         return;
       }
       lastDown = { t: now, x: e.clientX, y: e.clientY };
+      // Arrastrar desde un punto de conexión: flecha(s) nueva(s). Si la figura es parte de una
+      // selección con varias figuras, se conectan todas.
+      const port = e.target.closest('[data-connect]');
+      if (port) {
+        const from = port.dataset.connect;
+        const sources = sel.has(from) && selShapes().length > 1 ? selShapes().map((s) => s.id) : [from];
+        drag = { mode: 'connect', sources, p, target: null };
+        return paintOverlay();
+      }
       const handle = e.target.closest('[data-handle]');
-      const el = selected && byId(selected);
+      const el = primary && byId(primary);
       if (handle && el) {
         snapshot();
         drag = { mode: handle.dataset.handle[0] === 'a' ? 'endpoint' : 'resize', h: handle.dataset.handle, orig: JSON.parse(JSON.stringify(el)), start: p, el };
@@ -380,10 +455,17 @@
       if (tool === 'select') {
         const g = e.target.closest('[data-id]');
         if (g) {
-          const hit = byId(g.dataset.id); select(hit.id);
+          const id = g.dataset.id;
+          if (e.shiftKey) { select(id, true); return; }
+          if (!sel.has(id)) select(id); else { primary = id; paint(); }
           snapshot();
-          drag = { mode: 'move', start: p, orig: JSON.parse(JSON.stringify(hit)), el: hit, moved: false };
-        } else { select(null); drag = { mode: 'pan', sx: e.clientX, sy: e.clientY, vx: view.x, vy: view.y }; }
+          drag = { mode: 'move', start: p, orig: selected().map((x) => JSON.parse(JSON.stringify(x))), moved: false };
+        } else {
+          // recuadro de selección (Shift agrega a la selección actual)
+          if (!e.shiftKey) clearSel();
+          drag = { mode: 'marquee', start: p, base: new Set(sel), rect: { x: p.x, y: p.y, w: 0, h: 0 } };
+          paint();
+        }
         return;
       }
       snapshot();
@@ -398,23 +480,47 @@
         const el2 = { id: uid(), type: 'pen', points: [[r1(p.x), r1(p.y)]], color };
         state.elements.push(el2); drag = { mode: 'pen', el: el2 };
       } else if (tool === 'text') {
-        const el2 = { id: uid(), type: 'text', x: r1(p.x), y: r1(p.y - 12), text: '', color, size: 18, _fresh: true };
-        state.elements.push(el2); tool = 'select'; selected = el2.id; paint(); editText(el2);
+        undo.pop(); tool = 'select'; newText(p); return;
       }
       paint();
     });
     svg.addEventListener('pointermove', (e) => {
-      if (!drag) return;
       const p = toWorld(e);
+      if (!drag) {
+        // puntos de conexión al pasar sobre una figura
+        if (readOnly || tool !== 'select') return;
+        const over = e.target.closest('[data-connect]') ? e.target.closest('[data-connect]').dataset.connect : (shapeAt(p) || {}).id || null;
+        if (over !== hoverId) { hoverId = over; paintOverlay(); }
+        return;
+      }
       const d = drag;
       if (d.mode === 'pan') { view.x = d.vx + e.clientX - d.sx; view.y = d.vy + e.clientY - d.sy; return applyView(); }
-      const dx = p.x - d.start?.x, dy = p.y - d.start?.y;
+      if (d.mode === 'connect') {
+        d.p = p;
+        const tgt = shapeAt(p, d.sources.length === 1 ? d.sources : []);
+        d.target = tgt && !(d.sources.length > 1 && d.sources.includes(tgt.id) && false) ? tgt.id : null;
+        return paintOverlay();
+      }
+      if (d.mode === 'marquee') {
+        const x = Math.min(d.start.x, p.x), y = Math.min(d.start.y, p.y), w = Math.abs(p.x - d.start.x), h = Math.abs(p.y - d.start.y);
+        d.rect = { x, y, w, h };
+        sel = new Set(d.base);
+        for (const el of state.elements) {
+          const b = bbox(el, state.elements);
+          if (b.x >= x && b.y >= y && b.x + b.w <= x + w && b.y + b.h <= y + h) sel.add(el.id);
+        }
+        primary = [...sel].pop() || null;
+        return paint();
+      }
+      const dx = p.x - (d.start ? d.start.x : 0), dy = p.y - (d.start ? d.start.y : 0);
       if (d.mode === 'move') {
         d.moved = d.moved || Math.abs(dx) + Math.abs(dy) > 1;
-        const o = d.orig, el = d.el;
-        if (el.type === 'pen') el.points = o.points.map(([x, y]) => [r1(x + dx), r1(y + dy)]);
-        else if (el.type === 'arrow') { ['from', 'to'].forEach((k) => { if (!o[k].id) el[k] = { x: r1(o[k].x + dx), y: r1(o[k].y + dy) }; }); }
-        else { el.x = r1(o.x + dx); el.y = r1(o.y + dy); }
+        for (const o of d.orig) {
+          const el = byId(o.id); if (!el) continue;
+          if (el.type === 'pen') el.points = o.points.map(([x, y]) => [r1(x + dx), r1(y + dy)]);
+          else if (el.type === 'arrow') { ['from', 'to'].forEach((k) => { if (!o[k].id) el[k] = { x: r1(o[k].x + dx), y: r1(o[k].y + dy) }; }); }
+          else { el.x = r1(o.x + dx); el.y = r1(o.y + dy); }
+        }
       } else if (d.mode === 'create') {
         const el = d.el;
         el.x = r1(Math.min(d.start.x, p.x)); el.y = r1(Math.min(d.start.y, p.y)); el.w = r1(Math.abs(dx)); el.h = r1(Math.abs(dy));
@@ -437,27 +543,46 @@
       const d = drag; drag = null;
       const p = toWorld(e);
       if (d.mode === 'pan') return;
+      if (d.mode === 'marquee') return paint();
+      if (d.mode === 'connect') {
+        if (d.target) {
+          snapshot();
+          const made = connect(d.sources, d.target);
+          if (!made.length) undo.pop();
+          else { sel = new Set(made.map((a) => a.id)); primary = made[made.length - 1].id; emit(); }
+        } else if (Math.hypot(p.x - d.p.x, p.y - d.p.y) < 1 && d.sources.length === 1) {
+          // clic sin arrastrar en un punto: solo selecciona la figura
+          sel = new Set(d.sources); primary = d.sources[0];
+        } else if (d.sources.length === 1) {
+          // soltar en el vacío: flecha suelta (luego se puede arrastrar su punta a otra figura)
+          snapshot();
+          const a = { id: uid(), type: 'arrow', from: { id: d.sources[0] }, to: { x: r1(p.x), y: r1(p.y) }, text: '', color };
+          state.elements.push(a); sel = new Set([a.id]); primary = a.id; emit();
+        }
+        return paint();
+      }
       if (d.mode === 'move' && !d.moved) { undo.pop(); return; }
       if (d.mode === 'create') {
         const el = d.el;
         if (el.w < 8 && el.h < 8) { const [w, h] = DEFAULT_SIZE[el.type]; el.w = w; el.h = h; el.x = r1(d.start.x - w / 2); el.y = r1(d.start.y - h / 2); }
-        tool = 'select'; selected = el.id; el._fresh = true; paint(); emit(); editText(el); return;
+        tool = 'select'; sel = new Set([el.id]); primary = el.id; el._fresh = true; paint(); emit(); editText(el); return;
       }
       if (d.mode === 'arrow' || d.mode === 'endpoint') {
         const key = d.mode === 'arrow' || d.h === 'a1' ? 'to' : 'from', other = key === 'to' ? 'from' : 'to';
-        const s = shapeAt(p, d.el[other] && d.el[other].id);
+        const s = shapeAt(p, d.el[other] && d.el[other].id ? [d.el[other].id] : []);
         if (s) d.el[key] = { id: s.id };
         const [a, b] = arrowEnds(d.el, state.elements);
         if (d.mode === 'arrow' && Math.hypot(a.x - b.x, a.y - b.y) < 10 && !(d.el.from.id && d.el.to.id)) {
           state.elements = state.elements.filter((x) => x !== d.el); undo.pop(); paint(); return;
         }
-        if (d.mode === 'arrow') { tool = 'select'; selected = d.el.id; }
+        if (d.mode === 'arrow') { tool = 'select'; sel = new Set([d.el.id]); primary = d.el.id; }
       }
       if (d.mode === 'pen' && d.el.points.length < 2) { state.elements = state.elements.filter((x) => x !== d.el); undo.pop(); paint(); return; }
       paint(); emit();
     };
     svg.addEventListener('pointerup', endDrag);
     svg.addEventListener('pointercancel', endDrag);
+    svg.addEventListener('pointerleave', () => { if (!drag && hoverId) { hoverId = null; paintOverlay(); } });
     svg.addEventListener('wheel', (e) => {
       e.preventDefault();
       const r = svg.getBoundingClientRect();
@@ -473,10 +598,11 @@
       if (mod && e.key.toLowerCase() === 'z') { e.preventDefault(); return e.shiftKey ? doRedo() : doUndo(); }
       if (mod && e.key.toLowerCase() === 'y') { e.preventDefault(); return doRedo(); }
       if (mod && e.key.toLowerCase() === 'd') { e.preventDefault(); return duplicate(); }
+      if (mod && e.key.toLowerCase() === 'a') { e.preventDefault(); return selectAll(); }
       if (mod) return;
       if (e.key === 'Delete' || e.key === 'Backspace') { e.preventDefault(); return remove(); }
-      if (e.key === 'Escape') { selected = null; tool = 'select'; return paint(); }
-      if (e.key === 'Enter' && selected) { e.preventDefault(); const el = byId(selected); if (el && el.type !== 'pen') editText(el); return; }
+      if (e.key === 'Escape') { clearSel(); tool = 'select'; return paint(); }
+      if (e.key === 'Enter' && primary) { e.preventDefault(); const el = byId(primary); if (el && el.type !== 'pen') editText(el); return; }
       const tk = TOOLS.find(([, key]) => key === e.key);
       if (tk) { e.preventDefault(); setTool(tk[0]); }
     });
@@ -493,7 +619,7 @@
       if (same && fitted) return;
       if (editing && !readOnly) { editing = null; editBox.classList.add('hidden'); }
       state = next;
-      if (selected && !byId(selected)) selected = null;
+      sel = new Set([...sel].filter((id) => byId(id))); if (primary && !byId(primary)) primary = [...sel].pop() || null;
       if (document.activeElement !== notes || readOnly) notes.value = state.notes;
       undo = readOnly ? [] : undo;
       paint();
@@ -503,7 +629,7 @@
     ro.observe(svg);
     return {
       getValue, setValue,
-      reset(v) { undo = []; redo = []; fitted = false; selected = null; setValue(v); },
+      reset(v) { undo = []; redo = []; fitted = false; clearSel(); setValue(v); },
       fit, focus: () => stage.focus(), exportPng,
       destroy() { ro.disconnect(); root.innerHTML = ''; },
     };

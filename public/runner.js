@@ -37,10 +37,19 @@
   // Precarga (útil para Python, que tarda unos segundos la primera vez).
   function warmup(lang) { getWorker(lang); return readyPromises[lang]; }
 
-  async function run(lang, code, fn, tests) {
+  const REMOTE_ERR = { __NOFN__: (fn) => tr('run.nofn', { fn }), __TIMEOUT__: () => tr('run.timeout', { s: 10 }), __NOJAVA__: () => tr('run.nojava'), __RUNNER_DOWN__: () => tr('run.down'), __BUSY__: () => tr('run.busy') };
+  // `remote(code)` ejecuta en el servidor (Java) y devuelve { error?, stdout, cases }
+  async function run(lang, code, fn, tests, remote) {
+    let raw;
+    if (lang === 'java') {
+      try { raw = await remote(code); } catch { raw = { error: '__RUNNER_DOWN__' }; }
+      raw = { cases: [], stdout: '', ...raw };
+      if (REMOTE_ERR[raw.error]) raw.error = REMOTE_ERR[raw.error](fn);
+      return finish(raw, fn, tests);
+    }
     const w = getWorker(lang);
     await readyPromises[lang];
-    const raw = await new Promise((resolve) => {
+    raw = await new Promise((resolve) => {
       const timer = setTimeout(() => {
         w.removeEventListener('message', onMsg);
         kill(lang);
@@ -53,6 +62,9 @@
       w.addEventListener('message', onMsg);
       w.postMessage({ code, fn, tests: tests.map((t) => ({ args: t.args })) });
     });
+    return finish(raw, fn, tests);
+  }
+  function finish(raw, fn, tests) {
     const cases = tests.map((t, i) => {
       const c = raw.cases[i] || {};
       const ok = !raw.error && !c.error && deepEqual(c.actual, t.expected);

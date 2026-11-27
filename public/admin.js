@@ -1,5 +1,5 @@
 (function () {
-  const { t, loc, exText, diff, starter, langSwitch, $, $$, esc, md, json, LANG, renderResults, toast, fmtTime, fmtCountdown, signature, icon, LOGO, ago, hhmm,
+  const { cmMode, t, loc, exText, diff, starter, langSwitch, $, $$, esc, md, json, LANG, renderResults, toast, fmtTime, fmtCountdown, signature, icon, LOGO, ago, hhmm,
     themeSwitch, themeOptions, onThemeChange, localTz, zonedToUtc, utcToZonedInput, tzLabel, tzShort, fmtIn, tzOptions, modal, confirmBox } = UI;
   const CACHE_KEY = 'alcor:admin-cache';
   onThemeChange(() => { if (viewer) viewer.refresh(); }); // re-medir el editor si cambia el tamaño del código
@@ -152,7 +152,7 @@
             <div><label for="f-email">${t('a.email')} <span class="faint" style="font-weight:400">${t('a.optional')}</span></label><input id="f-email" type="email" placeholder="${t('a.email.ph')}" value="${esc(form.email)}"></div>
           </div>
           <div class="grid2" style="margin-top:14px">
-            <div id="f-plang"><span class="label">${t('a.plang')}</span><div class="seg full">${segBtn('lang', 'python', 'Python')}${segBtn('lang', 'javascript', 'JavaScript')}</div></div>
+            <div id="f-plang"><span class="label">${t('a.plang')}</span><div class="seg full">${segBtn('lang', 'python', 'Python')}${segBtn('lang', 'javascript', 'JavaScript')}${segBtn('lang', 'java', 'Java')}</div></div>
             <div><span class="label">${t('a.ui0')}</span><div class="seg full">${segBtn('ui', 'es', 'Español')}${segBtn('ui', 'en', 'English')}</div></div>
           </div>
           <div class="grid2" style="margin-top:14px">
@@ -312,7 +312,7 @@
       <div class="section-title">${t('a.instr_cand')}</div>
       <p class="desc">${md(exText(c, 'description'))}</p>
       <div class="section-title">${t('a.starter')}</div>
-      <div class="grid2"><div><span class="label faint">Python</span><pre class="code">${esc(starter(c.starter.python))}</pre></div><div><span class="label faint">JavaScript</span><pre class="code">${esc(starter(c.starter.javascript))}</pre></div></div>
+      <div class="grid-auto">${['python', 'javascript', 'java'].filter((l) => c.starter[l]).map((l) => `<div><span class="label faint">${LANG[l]}</span><pre class="code">${esc(starter(c.starter[l]))}</pre></div>`).join('')}</div>
       <div class="section-title">${t('a.cases_h', { v: c.tests.filter((x) => !x.hidden).length, h: c.tests.filter((x) => x.hidden).length, lang: LANG[lang] })}</div>
       <table class="tbl"><thead><tr><th>#</th><th>${t('a.th.input')}</th><th>${t('a.th.expected')}</th></tr></thead><tbody>${rows}</tbody></table>
       <p class="faint" style="font-size:12px;margin-top:8px">${t('a.hidden_note')}</p>`;
@@ -338,7 +338,7 @@
     $$('#cat-list .row').forEach((r) => r.onclick = () => { catSel = r.dataset.id; renderCatalogView(); });
     const c = chById(catSel);
     $('#cat-detail').innerHTML = c ? `<div class="preview">
-        ${isDesign(c) ? '' : `<div class="seg" style="float:right">${['python', 'javascript'].map((l) => `<button data-l="${l}" class="${catLang === l ? 'on' : ''}">${LANG[l]}</button>`).join('')}</div>`}
+        ${isDesign(c) ? '' : `<div class="seg" style="float:right">${['python', 'javascript', 'java'].map((l) => `<button data-l="${l}" class="${catLang === l ? 'on' : ''}">${LANG[l]}</button>`).join('')}</div>`}
         ${previewHtml(c, catLang)}
         <button class="btn primary" style="margin-top:16px" id="cat-use">${icon('plus')} ${t('a.use_new')}</button></div>`
       : `<div class="empty-state"><div class="ico">${icon('book')}</div><h3>${t('a.nav.catalog')}</h3>${t('a.cat.empty')}</div>`;
@@ -440,7 +440,7 @@
           <ul class="timeline" id="d-timeline"></ul>
         </div>
       </div>`;
-    viewer = CodeMirror.fromTextArea($('#d-code'), { mode: c.lang === 'python' ? 'python' : 'javascript', lineNumbers: true, readOnly: true });
+    viewer = CodeMirror.fromTextArea($('#d-code'), { mode: cmMode(c.lang), lineNumbers: true, readOnly: true });
     boardView = idsOf(c).some((id) => isDesign(chById(id))) ? AlcorBoard.create($('#d-board'), { readOnly: true }) : null;
     $('#d-follow').onchange = (e) => { follow = e.target.checked; if (follow && c.active) showExercise(c.active); };
     $('#d-run').onclick = runHidden;
@@ -644,7 +644,8 @@
     const c = detailCache, ch = chById(viewEx);
     const btn = $('#d-run'); btn.disabled = true; btn.textContent = t('running');
     try {
-      const res = await AlcorRunner.run(c.lang, viewer.getValue(), ch.fn[c.lang], ch.tests);
+      const remote = (src) => api(`/api/admin/candidates/${c.id}/run`, { method: 'POST', body: JSON.stringify({ exercise: ch.id, code: src }) });
+      const res = await AlcorRunner.run(c.lang, viewer.getValue(), ch.fn[c.lang], ch.tests, remote);
       renderResults($('#d-results'), res, c.lang, ch.fn[c.lang]);
       if (res.stdout) $('#d-results').insertAdjacentHTML('beforeend', `<div class="section-title">${t('a.output')}</div><pre class="console">${esc(res.stdout)}</pre>`);
       $('#d-summary').innerHTML = `<span class="tag ${res.passed === res.total ? 'ok' : 'bad'}">${res.passed}/${res.total} tests</span>`;

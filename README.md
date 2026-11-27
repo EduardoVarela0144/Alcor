@@ -6,10 +6,12 @@ con **tests automáticos**. Tú ves su código, ejecuciones y actividad **en viv
 de administrador al que solo tú tienes acceso.
 
 **Tipos de entrevista** (los eliges al preparar el link):
-- **Coding**: problemas de programación con tests automáticos (17 en el catálogo).
+- **Coding**: problemas de programación con tests automáticos (17 en el catálogo) en **Python, JavaScript o Java**.
+  Python y JavaScript corren en el navegador; Java se compila y ejecuta en `alcor-runner` (ver abajo).
 - **System design**: el candidato dibuja la arquitectura en un **pizarrón** (cajas, bases de datos, círculos, rombos,
   flechas que se pegan a las figuras, texto, lápiz, colores, líneas punteadas, deshacer/rehacer, zoom) y escribe sus
-  decisiones en las notas. Tú ves el diagrama en vivo junto con los requerimientos y una **rúbrica** que solo ves tú,
+  decisiones en las notas. Para conectar, arrastra desde los puntos ● de una figura; selecciona varias (Shift+clic o
+  un recuadro) y arrastra desde un punto para **conectarlas todas a otro nodo** de un jalón. Tú ves el diagrama en vivo junto con los requerimientos y una **rúbrica** que solo ves tú,
   y puedes descargarlo en PNG. 6 problemas clásicos (acortador de URLs, rate limiter, notificaciones, mensajería, feed,
   archivos) y 5 de **IA / RAG de 60 minutos** (asistente RAG sobre documentos, pipeline de ingesta y embeddings,
   agente de soporte con herramientas, gateway de LLMs, plataforma de evaluación y observabilidad).
@@ -84,6 +86,17 @@ Variables de entorno:
 | `RESEND_API_KEY` | Opcional. API key de [Resend](https://resend.com) para enviar correos desde Alcor. |
 | `MAIL_FROM` | Opcional. Remitente, p. ej. `Alcor <evaluaciones@tudominio.com>` (dominio verificado en Resend). |
 | `ADMIN_EMAIL` | Opcional. Tu correo para recibir avisos (requiere `RESEND_API_KEY`). |
+| `RUNNER_URL` | Para Java: URL del servicio `alcor-runner`. |
+| `RUNNER_TOKEN` | Para Java: token compartido con `alcor-runner` (el mismo valor en los dos servicios). |
+| `JAVA_LOCAL` | Solo desarrollo: `1` ejecuta Java con el `javac`/`java` de tu máquina. |
+
+### Java (`runner/`)
+
+El código Java de los candidatos se compila y ejecuta en un servicio aparte (`runner/Runner.java` + `Dockerfile`,
+sin dependencias), que **no tiene las credenciales de Alcor**: así un candidato no puede leer `ADMIN_PASSWORD` ni los
+datos de otros. Cada ejecución tiene límite de 10 s y 256 MB, corre con un usuario sin privilegios y sin variables de
+entorno. Alcor arma `Solution.java` con el código del candidato (estilo LeetCode: `class Solution` con el método) y un
+arnés que llama al método con cada caso y devuelve los resultados en JSON (`java.js`).
 
 ## Agregar problemas de system design
 

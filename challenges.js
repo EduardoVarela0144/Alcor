@@ -293,6 +293,36 @@ const EN = {
 for (const c of CHALLENGES) if (EN[c.id]) c.en = EN[c.id];
 
 // Código inicial con el comentario en el idioma del candidato.
+// ---------------- Java ----------------
+// Firma del método (estilo LeetCode: clase Solution con método de instancia), tipos de los
+// parámetros (para convertir los casos JSON a literales de Java) y valor de retorno inicial.
+const JAVA = {
+  'fizzbuzz': ['public List<String> fizzbuzz(int n)', ['int'], 'new ArrayList<>()'],
+  'reverse-words': ['public String reverseWords(String s)', ['String'], '""'],
+  'palindrome': ['public boolean isPalindrome(String s)', ['String'], 'false'],
+  'two-sum': ['public int[] twoSum(int[] nums, int target)', ['int[]', 'int'], 'new int[0]'],
+  'valid-parentheses': ['public boolean isValid(String s)', ['String'], 'false'],
+  'binary-search': ['public int search(int[] nums, int target)', ['int[]', 'int'], '-1'],
+  'roman-to-int': ['public int romanToInt(String s)', ['String'], '0'],
+  'word-frequency': ['public Map<String, Integer> wordCount(String text)', ['String'], 'new HashMap<>()'],
+  'longest-unique': ['public int lengthOfLongest(String s)', ['String'], '0'],
+  'merge-intervals': ['public int[][] merge(int[][] intervals)', ['int[][]'], 'new int[0][]'],
+  'max-subarray': ['public int maxSubarray(int[] nums)', ['int[]'], '0'],
+  'flatten': ['public List<Integer> flatten(List<Object> items)', ['List<Object>'], 'new ArrayList<>()'],
+  'rotate-matrix': ['public int[][] rotate(int[][] matrix)', ['int[][]'], 'new int[0][]'],
+  'top-k-frequent': ['public int[] topKFrequent(int[] nums, int k)', ['int[]', 'int'], 'new int[0]'],
+  'num-islands': ['public int numIslands(int[][] grid)', ['int[][]'], '0'],
+  'coin-change': ['public int coinChange(int[] coins, int amount)', ['int[]', 'int'], '-1'],
+  'lru-cache': ['public List<Integer> lruSimulate(int capacity, List<List<Object>> ops)', ['int', 'List<List<Object>>'], 'new ArrayList<>()'],
+};
+for (const c of CHALLENGES) {
+  const j = JAVA[c.id]; if (!j) continue;
+  const [sig, params, ret] = j;
+  c.java = { sig, params };
+  c.fn.java = /(\w+)\s*\(/.exec(sig)[1];
+  c.starter.java = `import java.util.*;\n\nclass Solution {\n    ${sig} {\n        // tu código aquí\n        return ${ret};\n    }\n}\n`;
+}
+
 const starterFor = (c, lang, ui) => (ui === 'en' ? c.starter[lang].replace('tu código aquí', 'your code here') : c.starter[lang]);
 
 module.exports = CHALLENGES;

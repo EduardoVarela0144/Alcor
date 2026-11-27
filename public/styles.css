@@ -411,3 +411,12 @@ pre.console.err { color: var(--red); }
 .req-list li + li { margin-top: 4px; }
 .rubric li::marker { content: "☐  "; color: var(--faint); }
 .kind-tag { color: var(--violet); border-color: color-mix(in srgb, var(--violet) 30%, transparent); background: color-mix(in srgb, var(--violet) 8%, transparent); }
+
+/* pizarrón: conexiones y selección múltiple */
+.b-port { fill: var(--panel); stroke: var(--brand); cursor: crosshair; }
+.b-port:hover { fill: var(--brand); }
+.b-ghost { stroke: var(--brand); fill: none; }
+.b-target { fill: color-mix(in srgb, var(--brand) 8%, transparent); stroke: var(--brand); }
+.b-marquee { fill: color-mix(in srgb, var(--brand) 7%, transparent); stroke: var(--brand); stroke-dasharray: 4 3; }
+.b-selinfo { font-size: 12px; color: var(--muted); padding: 0 4px; white-space: nowrap; }
+.grid-auto { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; }

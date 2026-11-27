@@ -9,6 +9,7 @@ const path = require('path');
 const crypto = require('crypto');
 const CHALLENGES = require('./challenges');
 const I18N = require('./public/i18n.js');
+const JAVA = require('./java'); // Java se ejecuta en el servidor (runner aparte), no en el navegador
 
 const PORT = process.env.PORT || 3000;
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || '';
@@ -18,7 +19,7 @@ const DB_FILE = path.join(DATA_DIR, 'db.json');
 const PUBLIC = path.join(__dirname, 'public');
 const IS_PROD = process.env.NODE_ENV === 'production';
 const ADMIN_TTL_MS = 12 * 60 * 60 * 1000;
-const LANGS = ['python', 'javascript'];
+const LANGS = ['python', 'javascript', 'java'];
 const MAX_EXERCISES = 6;
 const MAX_CODE = 400000; // los diagramas de system design pesan más que el código
 const MAX_VERSIONS = 30;
@@ -111,13 +112,14 @@ const EMPTY_BOARD = JSON.stringify({ v: 1, elements: [], notes: '' });
 const challengeById = (id) => ALL.find((c) => c.id === id);
 const starterFor = (c, lang, ui) => (c.kind === 'design' ? EMPTY_BOARD : CHALLENGES.starterFor(c, lang, ui));
 const KINDS = ['coding', 'design', 'mixed'];
+const javaBusy = new Set(); // una ejecución de Java a la vez por candidato
 // Lo que ve el candidato: sin casos ocultos ni rúbrica
 const publicChallenge = (c, lang) => (c.kind === 'design'
   ? { id: c.id, kind: 'design', title: c.title, difficulty: c.difficulty, topic: c.topic, description: c.description,
       requirements: c.requirements, questions: c.questions,
       en: c.en && { title: c.en.title, topic: c.en.topic, description: c.en.description, requirements: c.en.requirements, questions: c.en.questions } }
   : { en: c.en, id: c.id, kind: 'coding', title: c.title, difficulty: c.difficulty, topic: c.topic, description: c.description,
-      fn: c.fn[lang], starter: c.starter[lang],
+      fn: c.fn[lang], starter: c.starter[lang], sig: lang === 'java' && c.java ? c.java.sig : undefined,
       tests: c.tests.filter((t) => !t.hidden).map(({ args, expected }) => ({ args, expected })) });
 // Mezcla código recibido ({ idEjercicio: código }) solo para ejercicios de este candidato.
 function mergeCode(cand, code) {
@@ -443,6 +445,15 @@ async function handle(req, res) {
       save(); broadcast(c);
       return send(res, 200, summary(c));
     }
+    const mRun = p.match(/^\/api\/admin\/candidates\/([\w-]+)\/run$/);
+    if (mRun && m === 'POST') {
+      const c = db.candidates[mRun[1]];
+      if (!c) return send(res, 404, { error: E(req, 's.not_found') });
+      const body = await readBody(req).catch(() => ({}));
+      const ch = challengeById(body.exercise);
+      if (!ch || ch.kind === 'design' || !c.challengeIds.includes(ch.id)) return send(res, 400, { error: E(req, 's.not_found') });
+      return send(res, 200, await JAVA.run(String(body.code || ''), ch, ch.tests));
+    }
     if (p === '/api/admin/notices' && m === 'GET') return send(res, 200, (db.notices || []).slice(-100).reverse());
     const mAct = p.match(/^\/api\/admin\/candidates\/([\w-]+)\/(activate|deactivate)$/);
     if (mAct && m === 'POST') {
@@ -485,7 +496,7 @@ async function handle(req, res) {
   }
 
   // ----- Candidato -----
-  const mc = p.match(/^\/api\/session\/([^/]+)(?:\/(start|sync|submit|resume))?$/);
+  const mc = p.match(/^\/api\/session\/([^/]+)(?:\/(start|sync|submit|resume|run|warm))?$/);
   if (mc) {
     const cand = getCandidate(mc[1]);
     if (!cand) return send(res, 404, { error: E(req, 's.invalid_link') });
@@ -502,7 +513,23 @@ async function handle(req, res) {
       if (typeof cand.code[id] !== 'string') cand.code[id] = starterFor(challengeById(id), cand.lang, cand.ui);
     });
 
-    if (!mc[2] && m === 'GET') return send(res, 200, view());
+    if (!mc[2] && m === 'GET') { if (cand.lang === 'java' && cand.status !== 'submitted') JAVA.warm(); return send(res, 200, view()); }
+
+    // Java: despierta al runner (el plan gratis lo duerme) mientras el candidato lee las instrucciones
+    if (mc[2] === 'warm') { JAVA.warm(); return send(res, 200, { ok: true }); }
+
+    // Java: correr los casos visibles en el servidor (Python y JavaScript corren en el navegador)
+    if (mc[2] === 'run' && m === 'POST') {
+      if (cand.status !== 'in_progress') return send(res, 409, { error: E(req, 's.not_active'), status: cand.status });
+      if (cand.lang !== 'java') return send(res, 400, { error: 'Bad request' });
+      if (javaBusy.has(cand.id)) return send(res, 429, { error: '__BUSY__' });
+      const body = await readBody(req).catch(() => ({}));
+      const ch = challengeById(body.exercise);
+      if (!ch || ch.kind === 'design' || !cand.challengeIds.includes(ch.id)) return send(res, 400, { error: 'Bad request' });
+      javaBusy.add(cand.id);
+      try { return send(res, 200, await JAVA.run(String(body.code || '').slice(0, MAX_CODE), ch, ch.tests.filter((t) => !t.hidden))); }
+      finally { javaBusy.delete(cand.id); }
+    }
 
     if (mc[2] === 'start' && m === 'POST') {
       if (cand.status === 'pending' && !isOpen(cand)) return send(res, 423, { error: E(req, 's.not_open'), ...view() });

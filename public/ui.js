@@ -13,7 +13,8 @@ window.UI = (function () {
     return out.replace(/("(?:[^"\\]|\\.)*")|\btrue\b|\bfalse\b|\bnull\b/g, (m, str) => str || ({ true: 'True', false: 'False', null: 'None' })[m]);
   };
   const md = (s) => esc(s).replace(/`([^`]+)`/g, '<code>$1</code>');
-  const LANG = { python: 'Python', javascript: 'JavaScript' };
+  const LANG = { python: 'Python', javascript: 'JavaScript', java: 'Java' };
+  const cmMode = (lang) => (lang === 'python' ? 'python' : lang === 'java' ? 'text/x-java' : 'javascript');
   const signature = (lang, fn, args) => `${fn}(${args.map((v) => json(v, lang)).join(', ')})`;
 
   // Íconos (trazo 1.5, estilo Lucide)
@@ -218,6 +219,6 @@ window.UI = (function () {
   const exText = (c, f) => (I18N.lang() === 'en' && c.en && c.en[f] ? c.en[f] : c[f]);
   const diff = (d) => t('diff.' + d);
   const starter = (code) => (I18N.lang() === 'en' ? String(code).replace('tu código aquí', t('starter.comment')) : code);
-  return { t, loc, exText, diff, starter, langSwitch: () => I18N.switcher(), $, $$, esc, md, json, LANG, signature, renderResults, toast, fmtTime, fmtCountdown, ago, hhmm, icon, LOGO,
+  return { cmMode, t, loc, exText, diff, starter, langSwitch: () => I18N.switcher(), $, $$, esc, md, json, LANG, signature, renderResults, toast, fmtTime, fmtCountdown, ago, hhmm, icon, LOGO,
     themeSwitch, setTheme, getTheme, applyTheme, themeOptions, themeLabel, swatch, onThemeChange: TH.onChange, localTz, zonedToUtc, utcToZonedInput, tzLabel, tzShort, fmtIn, tzOptions, modal, confirmBox };
 })();

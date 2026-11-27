@@ -1,5 +1,5 @@
 (function () {
-  const { t, loc, exText, diff, starter, langSwitch, $, $$, esc, md, json, LANG, signature, renderResults, fmtTime, fmtCountdown, hhmm, icon, LOGO,
+  const { cmMode, t, loc, exText, diff, starter, langSwitch, $, $$, esc, md, json, LANG, signature, renderResults, fmtTime, fmtCountdown, hhmm, icon, LOGO,
     themeSwitch, getTheme, applyTheme, onThemeChange, localTz, fmtIn, tzLabel, modal, confirmBox, toast } = UI;
   const token = decodeURIComponent(location.pathname.split('/c/')[1] || '');
   const api = (sub = '') => `/api/session/${encodeURIComponent(token)}${sub}`;
@@ -217,7 +217,7 @@
       dirty = true; queueSync();
       return;
     }
-    $('#p-fn').textContent = S.lang === 'python' ? `def ${ch.fn}(...)` : `function ${ch.fn}(...)`;
+    $('#p-fn').textContent = S.lang === 'java' && ch.sig ? ch.sig : S.lang === 'python' ? `def ${ch.fn}(...)` : `function ${ch.fn}(...)`;
     $('#p-examples').innerHTML = ch.tests.map((tc) =>
       `<div class="example">${esc(signature(S.lang, ch.fn, tc.args))}<br><span class="faint">→</span> ${esc(json(tc.expected, S.lang))}</div>`).join('');
     editor.swapDoc(docs[id]);
@@ -235,9 +235,9 @@
 
   function workspace() {
     show('screen-app');
-    const mode = S.lang === 'python' ? 'python' : 'javascript';
+    const mode = cmMode(S.lang);
     editor = CodeMirror.fromTextArea($('#editor'), {
-      mode, lineNumbers: true, indentUnit: S.lang === 'python' ? 4 : 2,
+      mode, lineNumbers: true, indentUnit: S.lang === 'javascript' ? 2 : 4,
       tabSize: 4, autoCloseBrackets: true, matchBrackets: true, styleActiveLine: true, autofocus: true,
       extraKeys: {
         Tab: (cm) => cm.somethingSelected() ? cm.indentSelection('add') : cm.replaceSelection(' '.repeat(cm.getOption('indentUnit')), 'end'),
@@ -322,7 +322,7 @@
       body: `<div class="vmodal"><div class="code"><div class="code-h" id="vm-h"></div><div class="editor-wrap"><textarea id="vm-code"></textarea></div></div><div class="lst"><div class="vlist" id="vm-list"></div></div></div>`,
       footer: `<button class="btn" id="vm-save">${icon('save')} ${t('v.save_current')}</button><div class="spacer"></div><button class="btn" data-no>${t('close')}</button><button class="btn primary" id="vm-restore" disabled>${icon('rotate')} ${t('v.restore')}</button>` });
     const design = isDesign(challenge(active));
-    const viewer = design ? null : CodeMirror.fromTextArea($('#vm-code'), { mode: S.lang === 'python' ? 'python' : 'javascript', lineNumbers: true, readOnly: true });
+    const viewer = design ? null : CodeMirror.fromTextArea($('#vm-code'), { mode: cmMode(S.lang), lineNumbers: true, readOnly: true });
     // En diseño mostramos el diagrama y las notas en lugar del código
     const showCode = (code) => {
       if (!design) { viewer.setValue(code); setTimeout(() => viewer.refresh(), 0); return; }
@@ -417,10 +417,13 @@
     const id = active, ch = challenge(id);
     const btn = $('#btn-run');
     btn.disabled = true; btn.textContent = t('running');
+    if (S.lang === 'java') $('#tab-tests').innerHTML = `<div class="empty">${t('run.java_wait')}</div>`;
     $('#summary').textContent = '';
     try {
       const code = docs[id].getValue();
-      const res = await AlcorRunner.run(S.lang, code, ch.fn, ch.tests);
+      // Java se compila y ejecuta en el servidor; Python y JavaScript, en el navegador
+      const remote = (src) => fetch(api('/run'), { method: 'POST', headers: HEADERS(), body: JSON.stringify({ exercise: id, code: src }) }).then((r) => r.json());
+      const res = await AlcorRunner.run(S.lang, code, ch.fn, ch.tests, remote);
       results[id] = res;
       if (active === id) showResults(res);
       renderTabs();
